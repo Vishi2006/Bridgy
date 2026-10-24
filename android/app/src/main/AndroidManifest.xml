@@ -55,6 +55,20 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="upi" android:host="pay" />
             </intent-filter>
+            <!-- Email verification & auth callback deep link (e.g. bridgy://login-callback, bridgy://verify) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="bridgy" />
+            </intent-filter>
+            <!-- Package-name scheme deep link (e.g. com.bridgy.bridgy://login-callback) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.bridgy.bridgy" />
+            </intent-filter>
         </activity>
 
         <service

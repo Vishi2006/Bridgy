@@ -49,7 +49,9 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     if (!mounted) return;
     setState(() => _accessibilityOn = running);
     if (!_ai.isConfigured) {
-      _appendSystem('Add your API key to start. Tap the gear.');
+      _appendSystem('Add your API key to start, or connect to the Backend.');
+    } else if (_ai.isBackendProxy && _ai.apiKey.isEmpty) {
+      _appendSystem('Connected to Bridgy Backend with server-side AI key. Ready to assist!');
     }
   }
 
