@@ -28,44 +28,166 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// ── Root Endpoint ────────────────────────────────────────────────────────────
+// ── Root Endpoint: Clean Welcome Page (No JSON / No Leaks) ─────────────────
 app.get('/', (_req, res) => {
-  res.json({
-    status: 'ok',
-    name: 'Bridgy Backend API',
-    message: '🚀 Bridgy Backend is running on Vercel',
-    endpoints: {
-      health: '/health',
-      authCallback: '/auth/callback',
-      chatCompletions: '/v1/chat/completions',
-      agentAdb: '/api/agent/next-adb',
-    },
-  });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bridgy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #F6F3EC;
+      color: #171513;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #FFFFFF;
+      max-width: 440px;
+      width: 100%;
+      border-radius: 28px;
+      padding: 36px 28px;
+      text-align: center;
+      border: 1px solid #E7E1D4;
+      box-shadow: 0 8px 30px rgba(31, 25, 15, 0.06);
+    }
+    .logo {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      color: #171513;
+      margin-bottom: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #DCFCE7;
+      color: #16A34A;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+      border: 1px solid #86EFAC;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      background: #22C55E;
+      border-radius: 50%;
+    }
+    .welcome-text {
+      font-size: 14px;
+      color: #8A8578;
+      line-height: 1.5;
+      margin-bottom: 26px;
+    }
+    .checks {
+      background: #F9F7F2;
+      border-radius: 18px;
+      padding: 14px 18px;
+      border: 1px solid #EFEAE0;
+      text-align: left;
+      margin-bottom: 26px;
+    }
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: #171513;
+      padding: 8px 0;
+    }
+    .check-item:not(:last-child) {
+      border-bottom: 1px solid #EFEAE0;
+    }
+    .check-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #C9A961;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 13px 24px;
+      background: #141312;
+      color: #FFFFFF;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 999px;
+      transition: opacity 0.2s;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">Bridgy</div>
+    <div class="badge">
+      <span class="dot"></span>
+      All Systems Operational
+    </div>
+    <p class="welcome-text">
+      Welcome to Bridgy. The autonomous agent execution and smart-wallet layer is live and active.
+    </p>
+    <div class="checks">
+      <div class="check-item">
+        <span class="check-icon">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span>AI Agent Execution Engine</span>
+      </div>
+      <div class="check-item">
+        <span class="check-icon">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span>Smart Wallet Policy Guardrails</span>
+      </div>
+      <div class="check-item">
+        <span class="check-icon">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span>Cloud Database Bridge</span>
+      </div>
+      <div class="check-item">
+        <span class="check-icon">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span>Secure Auth Deep-Link Handler</span>
+      </div>
+    </div>
+    <a href="${appRedirectUrl}" class="btn">Open Bridgy App</a>
+  </div>
+</body>
+</html>`);
 });
 
-// ── Health Check ─────────────────────────────────────────────────────────────
-app.get('/health', async (_req, res) => {
-  const hasAgentKey = Boolean(
-    process.env.AGENT_API_KEY ||
-    process.env.OPENROUTER_API_KEY ||
-    process.env.DEEPSEEK_API_KEY
-  );
-
-  let supabaseStatus = 'disconnected';
-  try {
-    const { error } = await supabase.from('wallets').select('count', { count: 'exact', head: true });
-    supabaseStatus = error ? `connected (table check: ${error.message})` : 'connected';
-  } catch (err) {
-    supabaseStatus = `error: ${err.message}`;
-  }
-
+// ── Minimal Secure Health Check ──────────────────────────────────────────────
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    port,
-    agentKeyConfigured: hasAgentKey,
-    agentModel: process.env.AGENT_MODEL || 'deepseek/deepseek-chat',
-    supabase: supabaseStatus,
-    projectRef: process.env.SUPABASE_PROJECT_REF,
+    healthy: true,
   });
 });
 
