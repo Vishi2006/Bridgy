@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pesse Gold - Select Card</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@1,700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        gold: '#C9A961',
+        goldDeep: '#A9863D',
+        goldText: '#8A6A2A',
+        goldSoft: '#EFE4CC',
+        ivory: '#F4F1EA',
+        ink: '#171513',
+        muted: '#8A8578',
+        line: '#E7E1D4',
+        dark: '#141312',
+      },
+      fontFamily: {
+        display: ['Fraunces', 'serif'],
+        sans: ['Manrope', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+        script: ['Playfair Display', 'serif'],
+      },
+      boxShadow: {
+        cardSoft: '0 8px 24px -4px rgba(31, 25, 15, 0.06), 0 2px 6px -1px rgba(31, 25, 15, 0.04)',
+        pill: '0 6px 16px rgba(31, 25, 15, 0.18)',
+      }
+    }
+  }
+}
+</script>
+<style>
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .brand-watermark { font-family: 'Playfair Display', serif; font-style: italic; font-weight: 700; letter-spacing: -4px; line-height: 0.9; user-select: none; pointer-events: none; }
+  .watermark-gold { color: rgba(122, 94, 40, 0.45); text-shadow: 1px 1px 1px rgba(255, 255, 255, 0.3), -1px -1px 2px rgba(90, 74, 34, 0.4); }
+  .watermark-black { color: #1B1917; text-shadow: 0 1px 1px rgba(255, 255, 255, 0.07), 0 -1px 1px rgba(0, 0, 0, 0.9); }
+  .watermark-white { color: #FAF6EC; text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.9), -1px -1px 2px rgba(31, 25, 15, 0.07); }
+</style>
+</head>
+<body class="bg-[#E4DFD4] min-h-screen flex items-center justify-center p-0 sm:p-6 font-sans antialiased text-ink">
+<main class="w-full max-w-[412px] h-[892px] bg-ivory rounded-[48px] shadow-2xl overflow-hidden flex flex-col relative border-[7px] border-white">
+  <header class="w-full pt-4 px-8 pb-1 flex justify-between items-center text-xs font-semibold text-ink tracking-tight">
+    <span>9:41</span>
+    <div class="flex items-center space-x-1.5">
+      <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.28 19.58 10.58 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6-6-2.69 6-6 6z"></path></svg>
+      <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98A16.88 16.88 0 0012 4z"></path></svg>
+      <div class="w-5 h-2.5 border border-ink rounded-sm p-0.5 flex items-center">
+        <div class="w-full h-full bg-ink rounded-sm"></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="px-7 pt-4 pb-3 flex justify-between items-center">
+    <h1 class="text-[21px] font-display font-bold tracking-tight text-ink">Select Card</h1>
+    <button class="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-ink rounded-full text-xs font-medium border border-line shadow-sm active:scale-95 transition-transform">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <span>New card</span>
+    </button>
+  </div>
+
+  <div class="flex-1 px-6 pt-1 pb-24 overflow-y-auto space-y-4 no-scrollbar">
+    <article class="relative w-full h-[184px] bg-gold rounded-[24px] p-5 shadow-cardSoft overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.99]">
+      <span class="absolute -bottom-4 -left-1 brand-watermark watermark-gold text-[126px] font-bold z-0">Pesse</span>
+      <div class="relative z-10 flex justify-between items-start">
+        <div class="space-y-1">
+          <p class="text-ink text-[13px] font-medium tracking-tight">Linda Srikandi</p>
+          <h2 class="text-ink text-[26px] font-display font-bold tracking-tight leading-none">$112,411</h2>
+        </div>
+        <span class="text-[22px] font-sans font-extrabold italic tracking-tighter text-ink pr-1">VISA</span>
+      </div>
+      <div class="relative z-10 flex justify-between items-end">
+        <div class="flex items-center space-x-1.5 text-ink font-mono text-[13px] font-semibold tracking-wider">
+          <span class="text-base tracking-tighter">••••</span><span>2451</span>
+        </div>
+        <div class="inline-flex items-center gap-1.5 bg-[#0D0C0B] text-white px-3 py-1.5 rounded-full text-[11px] font-medium shadow-sm">
+          <div class="w-3.5 h-3.5 rounded-full bg-gold flex items-center justify-center">
+            <svg class="w-2.5 h-2.5 text-[#0D0C0B]" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <span>Main card</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="relative w-full h-[184px] bg-[#18181B] rounded-[24px] p-5 shadow-cardSoft overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.99]">
+      <span class="absolute -bottom-4 -left-1 brand-watermark watermark-black text-[126px] font-bold z-0">Pesse</span>
+      <div class="relative z-10 flex justify-between items-start">
+        <div class="space-y-1">
+          <p class="text-[#D4D4D4] text-[13px] tracking-tight">Linda Srikandi</p>
+          <h2 class="text-white text-[26px] font-display font-bold tracking-tight leading-none">$112,411</h2>
+        </div>
+        <span class="text-[22px] font-sans font-extrabold italic tracking-tighter text-white pr-1">VISA</span>
+      </div>
+      <div class="relative z-10 flex justify-between items-end">
+        <div class="flex items-center space-x-1.5 text-[#A3A3A3] font-mono text-[13px] font-semibold tracking-wider">
+          <span class="text-base tracking-tighter">••••</span><span>0095</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="relative w-full h-[184px] bg-white rounded-[24px] p-5 shadow-cardSoft overflow-hidden flex flex-col justify-between cursor-pointer border border-[#F2EEE4] active:scale-[0.99]">
+      <span class="absolute -bottom-4 -left-1 brand-watermark watermark-white text-[126px] font-bold z-0">Pesse</span>
+      <div class="relative z-10 flex justify-between items-start">
+        <div class="space-y-1">
+          <p class="text-[#5A554C] text-[13px] font-medium tracking-tight">Linda Srikandi</p>
+          <h2 class="text-ink text-[26px] font-display font-bold tracking-tight leading-none">$12,000</h2>
+        </div>
+        <span class="text-[22px] font-sans font-extrabold italic tracking-tighter text-ink pr-1">VISA</span>
+      </div>
+      <div class="relative z-10 flex justify-between items-end">
+        <div class="flex items-center space-x-1.5 text-[#3A352C] font-mono text-[13px] font-semibold tracking-wider">
+          <span class="text-base tracking-tighter">••••</span><span>1122</span>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div class="absolute bottom-7 inset-x-0 flex flex-col items-center justify-center pointer-events-none">
+    <button class="pointer-events-auto inline-flex items-center justify-center gap-2 bg-[#121110] text-white px-7 py-3 rounded-full shadow-pill active:scale-95 transition-all">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" x2="6" y1="6" y2="18"></line><line x1="6" x2="18" y1="6" y2="18"></line></svg>
+      <span class="text-[13px] font-semibold tracking-wide">Close</span>
+    </button>
+    <div class="w-32 h-1 bg-ink rounded-full mt-4 opacity-30"></div>
+  </div>
+</main>
+</body>
+</html>

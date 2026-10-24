@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pesse Gold - Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@1,700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        gold: '#C9A961',
+        goldDeep: '#A9863D',
+        goldText: '#8A6A2A',
+        goldSoft: '#EFE4CC',
+        ivory: '#F6F3EC',
+        ink: '#171513',
+        muted: '#8A8578',
+        line: '#E7E1D4',
+        dark: '#141312',
+        brick: '#C2554A',
+        star: '#E0B94F',
+      },
+      fontFamily: {
+        display: ['Fraunces', 'serif'],
+        sans: ['Manrope', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+        script: ['Playfair Display', 'serif'],
+      },
+      boxShadow: {
+        soft: '0 8px 30px rgba(31, 25, 15, 0.04)',
+        nav: '0 10px 30px -5px rgba(31, 25, 15, 0.45)',
+      }
+    }
+  }
+}
+</script>
+<style>
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .gold-coin {
+    background: radial-gradient(circle at 35% 30%, #F7EBCB 0%, #DCC27E 30%, #B08D57 70%, #6E5628 100%);
+    box-shadow: inset 0 1px 3px rgba(255, 249, 230, 0.9), inset 0 -2px 4px rgba(60, 44, 12, 0.45), 0 4px 14px rgba(31, 25, 15, 0.35);
+  }
+  .gold-coin-inner {
+    border: 1px solid rgba(255, 246, 221, 0.6);
+    background: linear-gradient(135deg, rgba(255, 248, 228, 0.4) 0%, rgba(169, 134, 61, 0.2) 100%);
+  }
+</style>
+</head>
+<body class="bg-[#EAE7DF] text-ink min-h-screen flex justify-center items-center antialiased sm:p-6 p-0 font-sans">
+<div class="relative w-full max-w-[390px] h-screen sm:h-[844px] bg-ivory sm:rounded-[48px] overflow-hidden shadow-2xl flex flex-col border border-line/80">
+  <header class="w-full pt-3 px-8 flex justify-between items-center text-xs font-semibold text-ink select-none z-20">
+    <span class="text-[15px]">9:41</span>
+    <div class="flex items-center space-x-1.5">
+      <div class="flex items-end space-x-0.5 h-3">
+        <div class="w-[3px] h-1 bg-ink rounded-sm"></div>
+        <div class="w-[3px] h-1.5 bg-ink rounded-sm"></div>
+        <div class="w-[3px] h-2 bg-ink rounded-sm"></div>
+        <div class="w-[3px] h-2.5 bg-ink rounded-sm"></div>
+      </div>
+      <svg class="w-3.5 h-3.5 fill-ink" viewBox="0 0 24 24"><path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98C20.93 5.9 16.69 4 12 4z"></path></svg>
+      <div class="w-5 h-2.5 border border-ink rounded-sm p-[1px] flex items-center">
+        <div class="w-full h-full bg-ink rounded-[1px]"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto no-scrollbar pb-24 px-5 space-y-4 pt-3">
+    <section class="flex items-center justify-between pt-1">
+      <h1 class="text-[26px] font-display font-bold tracking-[-0.03em] text-ink leading-none">Pesse</h1>
+      <div class="flex items-center space-x-2">
+        <button aria-label="Support and FAQ" class="w-8 h-8 rounded-full bg-white border border-line flex items-center justify-center text-ink shadow-sm active:scale-95 transition-all">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3m.08 4h.01" stroke-linecap="round"></path>
+          </svg>
+        </button>
+        <button class="relative flex items-center space-x-1.5 bg-dark text-white text-xs font-semibold px-3.5 py-1.5 rounded-full shadow-sm active:scale-95 transition-all">
+          <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M12 8v13m0-13V4.5a2.5 2.5 0 1 1 5 0V8m-5 0H3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-9zm0 0h9a2.5 2.5 0 1 0-5 0V8" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Rewards</span>
+          <span class="absolute -top-1 -right-0.5 text-star text-xs">✦</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="pt-2 text-center flex flex-col items-center">
+      <div class="inline-flex items-center space-x-1.5 cursor-pointer text-muted text-[13px] font-medium tracking-tight">
+        <span>Linda's card balance</span>
+        <span class="w-4 h-2.5 bg-gold rounded-[2px] inline-block border border-black/10"></span>
+        <svg class="w-3 h-3 text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </div>
+      <div class="mt-1 font-display font-bold text-[34px] tracking-[-0.03em] text-ink leading-tight">$521,098.31</div>
+      <div class="mt-1.5 inline-flex items-center px-3 py-0.5 bg-[#E7E1D4] rounded-full">
+        <span class="text-[11px] text-muted font-medium">Money hold <strong class="font-semibold text-ink">$2,500</strong></span>
+      </div>
+      <div class="w-full grid grid-cols-2 gap-3 mt-5">
+        <button class="w-full py-2.5 bg-white border border-line rounded-2xl flex items-center justify-center space-x-1.5 text-sm font-semibold text-ink shadow-sm hover:bg-[#FBF8F1] active:scale-[0.98] transition">
+          <svg class="w-4 h-4 text-ink" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M7 17L17 7M17 7H9M17 7V15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span>Send</span>
+        </button>
+        <button class="w-full py-2.5 bg-white border border-line rounded-2xl flex items-center justify-center space-x-1.5 text-sm font-semibold text-ink shadow-sm hover:bg-[#FBF8F1] active:scale-[0.98] transition">
+          <svg class="w-4 h-4 text-ink" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M17 7L7 17M7 17H15M7 17V9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span>Receive</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="bg-dark text-white rounded-3xl p-4 relative overflow-hidden shadow-sm">
+      <div class="pr-16 relative z-10">
+        <h2 class="text-[14px] font-bold tracking-tight text-white leading-tight">Start sending money tax free</h2>
+        <p class="text-[11px] text-muted leading-snug mt-1 max-w-[210px]">The best place for freelancers to receive and send money. Start saving now!</p>
+      </div>
+      <div class="absolute right-3.5 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full gold-coin p-1 flex items-center justify-center">
+        <div class="w-full h-full rounded-full gold-coin-inner flex items-center justify-center">
+          <svg class="w-6 h-6 text-[#FFFBEF]/90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 6v12m-3-9h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-3xl p-4 border border-[#F2EEE4] shadow-soft">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-[14px] font-bold text-ink tracking-tight">Send again</h2>
+        <button class="text-xs font-semibold text-ink bg-[#EEEAE0] px-2.5 py-1 rounded-full">+ Add</button>
+      </div>
+      <div class="flex items-center space-x-3 overflow-x-auto no-scrollbar py-0.5">
+        <div class="flex flex-col items-center shrink-0 w-12"><img src="../../assets/images/avatars/s_rijal.jpg" alt="S Rijal" class="relative w-11 h-11 rounded-full object-cover border border-line"><span class="text-[11px] font-medium text-ink mt-1.5 truncate max-w-full">S Rijal</span></div>
+        <div class="flex flex-col items-center shrink-0 w-12"><div class="relative w-11 h-11"><img src="../../assets/images/avatars/ferina_c.jpg" alt="Ferina C" class="w-11 h-11 rounded-full object-cover border border-line"><div class="absolute -bottom-1 -right-1 w-4 h-4 bg-gold rounded-full flex items-center justify-center border-2 border-white text-[8px] font-bold text-ink">P</div></div><span class="text-[11px] font-medium text-ink mt-1.5 truncate max-w-full">Ferina C</span></div>
+        <div class="flex flex-col items-center shrink-0 w-12"><div class="relative w-11 h-11"><img src="../../assets/images/avatars/daffa_t.jpg" alt="Daffa T" class="w-11 h-11 rounded-full object-cover border border-line"><div class="absolute -bottom-1 -right-1 w-4 h-4 bg-[#7A5E28] rounded-full flex items-center justify-center border-2 border-white text-[8px] font-bold text-white">S</div></div><span class="text-[11px] font-medium text-ink mt-1.5 truncate max-w-full">Daffa T</span></div>
+        <div class="flex flex-col items-center shrink-0 w-12"><div class="relative w-11 h-11"><img src="../../assets/images/avatars/bayu_s.jpg" alt="Bayu S" class="w-11 h-11 rounded-full object-cover border border-line"><div class="absolute -bottom-1 -right-1 w-4 h-4 bg-[#A9863D] rounded-full flex items-center justify-center border-2 border-white text-[7px] font-black text-white">BCA</div></div><span class="text-[11px] font-medium text-ink mt-1.5 truncate max-w-full">Bayu S</span></div>
+        <div class="flex flex-col items-center shrink-0 w-12"><div class="relative w-11 h-11"><img src="../../assets/images/avatars/christian_k.jpg" alt="Christian K" class="w-11 h-11 rounded-full object-cover border border-line"><div class="absolute -bottom-1 -right-1 w-4 h-4 bg-goldDeep rounded-full flex items-center justify-center border-2 border-white text-[8px] font-bold text-white">P</div></div><span class="text-[11px] font-medium text-ink mt-1.5 truncate max-w-full">Christian K</span></div>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-3xl p-4 border border-[#F2EEE4] shadow-soft">
+      <div class="flex items-center justify-between mb-3.5">
+        <h2 class="text-[14px] font-bold text-ink tracking-tight">History transaction</h2>
+        <a class="text-[11px] font-medium text-muted" href="#">see more</a>
+      </div>
+      <div class="space-y-3.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-full bg-[#F2EEE4] border border-line flex items-center justify-center text-muted">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3.6 9h16.8M3.6 15h16.8M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18"></path></svg>
+            </div>
+            <div>
+              <p class="text-[13px] font-semibold text-ink leading-tight">Dribbble Pro</p>
+              <p class="text-[11px] text-muted mt-0.5">June 28 • 00:01 AM</p>
+            </div>
+          </div>
+          <span class="text-[13px] font-bold text-brick">- $573</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="relative w-10 h-10"><img src="../../assets/images/avatars/syaiful_history.jpg" alt="Syaiful Rijal" class="w-10 h-10 rounded-full object-cover border border-line"><div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-brick rounded-full border border-white"></div></div>
+            <div>
+              <p class="text-[13px] font-semibold text-ink leading-tight">Syaiful Rijal</p>
+              <p class="text-[11px] text-muted mt-0.5">June 22 • 05:20 PM</p>
+            </div>
+          </div>
+          <span class="text-[13px] font-bold text-goldText">+ $1000</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="relative w-10 h-10"><img src="../../assets/images/avatars/ferina_history.jpg" alt="Ferina C" class="w-10 h-10 rounded-full object-cover border border-line"><div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-goldDeep rounded-full border border-white"></div></div>
+            <div>
+              <p class="text-[13px] font-semibold text-ink leading-tight">Ferina C</p>
+              <p class="text-[11px] text-muted mt-0.5">June 12 • 07:20 AM</p>
+            </div>
+          </div>
+          <span class="text-[13px] font-bold text-brick">- $200</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="absolute bottom-5 inset-x-0 flex justify-center pointer-events-none z-30">
+    <div class="pointer-events-auto bg-dark text-white px-5 py-2.5 rounded-full flex items-center space-x-6 shadow-nav border border-white/10">
+      <svg class="w-5 h-5 text-gold" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <svg class="w-5 h-5 text-[#6F6A60]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <svg class="w-5 h-5 text-[#6F6A60]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect height="14" rx="2" width="18" x="3" y="5"></rect><line x1="3" x2="21" y1="10" y2="10"></line></svg>
+      <svg class="w-5 h-5 text-[#6F6A60]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2 2-2 3.5" stroke-linecap="round"></path></svg>
+      <svg class="w-5 h-5 text-[#6F6A60]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="10" cy="7" r="4"></circle></svg>
+    </div>
+  </nav>
+  <div class="absolute bottom-1 inset-x-0 flex justify-center py-1 pointer-events-none z-40">
+    <div class="w-32 h-1 bg-ink/40 rounded-full"></div>
+  </div>
+</div>
+</body>
+</html>
