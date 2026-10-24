@@ -255,11 +255,13 @@ app.post('/api/terminal-logs', async (req, res) => {
   }
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`\n🚀 Bridgy Backend running at http://0.0.0.0:${port}`);
-  console.log(`🔗 Supabase Project: ${process.env.SUPABASE_PROJECT_REF}`);
-  console.log(`🤖 Agent API Provider: ${process.env.AGENT_BASE_URL || 'https://openrouter.ai/api/v1'}`);
-  console.log(`📱 App Redirect URL: ${appRedirectUrl}\n`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`\n🚀 Bridgy Backend running at http://0.0.0.0:${port}`);
+    console.log(`🔗 Supabase Project: ${process.env.SUPABASE_PROJECT_REF}`);
+    console.log(`🤖 Agent API Provider: ${process.env.AGENT_BASE_URL || 'https://openrouter.ai/api/v1'}`);
+    console.log(`📱 App Redirect URL: ${appRedirectUrl}\n`);
+  });
+}
 
 export default app;

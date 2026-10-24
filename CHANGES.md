@@ -70,3 +70,10 @@ Created a centralized Express server connecting Supabase with the DeepSeek/OpenR
 - `flutter analyze` completed with 0 compilation errors.
 - `flutter test` passed all 19 test suites across `macro_test.dart`, `policy_test.dart`, `upi_checkout_test.dart`, and `widget_test.dart`.
 - Verified `Backend/server.js` health check at `http://localhost:8787/health`, confirming `supabase: connected` and `agentKeyConfigured: true`.
+
+---
+
+## 7. Vercel Deployment Configuration
+- Added root [`vercel.json`](file:///d:/coding/Bridgy/vercel.json) to route all requests to `Backend/server.js` with `@vercel/node`.
+- Added [`Backend/api/index.js`](file:///d:/coding/Bridgy/Backend/api/index.js) export for Vercel serverless functions.
+- Updated `Backend/server.js` to guard `app.listen` when running in Vercel's serverless environment (`if (!process.env.VERCEL)`).
