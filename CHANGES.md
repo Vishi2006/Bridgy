@@ -74,6 +74,9 @@ Created a centralized Express server connecting Supabase with the DeepSeek/OpenR
 ---
 
 ## 7. Vercel Deployment Configuration
-- Added root [`vercel.json`](file:///d:/coding/Bridgy/vercel.json) to route all requests to `Backend/server.js` with `@vercel/node`.
-- Added [`Backend/api/index.js`](file:///d:/coding/Bridgy/Backend/api/index.js) export for Vercel serverless functions.
+- Added root [`vercel.json`](file:///d:/coding/Bridgy/vercel.json) rewrite rule routing `/(.*)` to `/api/index.js`.
+- Added root [`package.json`](file:///d:/coding/Bridgy/package.json) so Vercel installs dependencies when building from repository root.
+- Created root [`api/index.js`](file:///d:/coding/Bridgy/api/index.js) and [`Backend/api/index.js`](file:///d:/coding/Bridgy/Backend/api/index.js) serverless function entry points.
+- Created [`Backend/vercel.json`](file:///d:/coding/Bridgy/Backend/vercel.json) in case Vercel's Root Directory setting is set to `Backend`.
+- Added `GET /` endpoint in `Backend/server.js` so accessing the root URL returns a 200 OK status page instead of a 404 "page doesn't exist".
 - Updated `Backend/server.js` to guard `app.listen` when running in Vercel's serverless environment (`if (!process.env.VERCEL)`).

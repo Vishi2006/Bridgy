@@ -28,6 +28,21 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
+// ── Root Endpoint ────────────────────────────────────────────────────────────
+app.get('/', (_req, res) => {
+  res.json({
+    status: 'ok',
+    name: 'Bridgy Backend API',
+    message: '🚀 Bridgy Backend is running on Vercel',
+    endpoints: {
+      health: '/health',
+      authCallback: '/auth/callback',
+      chatCompletions: '/v1/chat/completions',
+      agentAdb: '/api/agent/next-adb',
+    },
+  });
+});
+
 // ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', async (_req, res) => {
   const hasAgentKey = Boolean(
