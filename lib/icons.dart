@@ -33,6 +33,7 @@ abstract final class Icons8 {
   static const close =
       '<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>';
   static const check = '<polyline points="20 6 9 17 4 12"/>';
+  static const bolt = '<path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>';
   static const backspace =
       '<path fill-rule="evenodd" clip-rule="evenodd" d="M2.5 12a2 2 0 0 1 .586-1.414l5-5A2 2 0 0 1 9.5 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-10a2 2 0 0 1-1.414-.586l-5-5A2 2 0 0 1 2.5 12Zm11.707-2.707a1 1 0 0 0-1.414 1.414L14.086 12l-1.293 1.293a1 1 0 1 0 1.414 1.414L15.5 13.414l1.293 1.293a1 1 0 0 0 1.414-1.414L16.914 12l1.293-1.293a1 1 0 0 0-1.414-1.414L15.5 10.586l-1.293-1.293Z"/>';
 }

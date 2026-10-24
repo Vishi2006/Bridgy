@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../icons.dart';
 import '../theme.dart';
+import 'agent_chat_screen.dart';
+import 'policy_screen.dart';
 import 'select_card_screen.dart';
 import 'send_money_screen.dart';
 
@@ -61,6 +63,37 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  Widget _agentPill(BuildContext context) {
+    return InkResponse(
+      onTap: () => _open(context, const AgentChatScreen()),
+      radius: 24,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.gold),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(Icons8.bolt, size: 14, color: AppColors.goldDeep),
+            SizedBox(width: 6),
+            Text(
+              'Agent',
+              style: TextStyle(
+                fontFamily: AppFonts.ui,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _header(BuildContext context) {
     return Row(
       children: [
@@ -82,6 +115,8 @@ class HomeScreen extends StatelessWidget {
           size: 32,
           iconSize: 16,
         ),
+        const SizedBox(width: 8),
+        _agentPill(context),
         const SizedBox(width: 8),
         Stack(
           clipBehavior: Clip.none,
@@ -636,7 +671,7 @@ class HomeScreen extends StatelessWidget {
             label: 'Cards',
             onTap: () => _open(context, const SelectCardScreen()),
           ),
-          _navItem(Icons8.navFinances, label: 'Finances'),
+          _navItem(Icons8.navFinances, label: 'Finances', onTap: () => _open(context, const PolicyScreen())),
           _navItem(Icons8.navProfile, label: 'Profile'),
         ],
       ),
