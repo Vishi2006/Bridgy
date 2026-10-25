@@ -23,10 +23,60 @@ void main() {
     });
 
     final balance = await WalletService.getBalance();
-    expect(balance, 42.5);
+    expect(balance.balanceInr, 42.5);
     expect(seen.headers['Authorization'], 'Bearer test-token');
     expect(seen.url.path, '/api/wallet/balance');
   });
+
+  test('getBalance parses the on-chain deposit fields', () async {
+    WalletService.clientOverride = MockClient(
+      (request) async => http.Response(
+        jsonEncode({
+          'balanceInr': 500,
+          'onchain': {
+            'address': '0xc2380dea8E9c66A5e0dFe54397A1bDc8eCA41592',
+            'balanceEth': 0.005,
+          },
+          'onchainError': null,
+        }),
+        200,
+      ),
+    );
+
+    final snapshot = await WalletService.getBalance();
+    expect(snapshot.balanceInr, 500);
+    expect(snapshot.onchainEth, 0.005);
+    expect(
+      snapshot.onchainAddress,
+      '0xc2380dea8E9c66A5e0dFe54397A1bDc8eCA41592',
+    );
+    expect(snapshot.onchainError, isNull);
+  });
+
+  test(
+    'getBalance surfaces an on-chain sync error next to the balance',
+    () async {
+      WalletService.clientOverride = MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'balanceInr': 500,
+            'onchain': null,
+            'onchainError': {
+              'error': 'Base Sepolia RPC failed',
+              'code': 'RPC_UNAVAILABLE',
+            },
+          }),
+          200,
+        ),
+      );
+
+      final snapshot = await WalletService.getBalance();
+      expect(snapshot.balanceInr, 500);
+      expect(snapshot.onchainEth, isNull);
+      expect(snapshot.onchainError, contains('Base Sepolia RPC failed'));
+      expect(snapshot.onchainError, contains('RPC_UNAVAILABLE'));
+    },
+  );
 
   test('getBalance surfaces the backend error and code', () async {
     WalletService.clientOverride = MockClient(

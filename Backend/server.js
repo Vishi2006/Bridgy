@@ -14,7 +14,14 @@ import {
   createRazorpay,
   sendRazorpayError,
 } from './razorpay.js';
-import { initSmartAccount, ownerAccount, publicClient, walletState } from './wallet.js';
+import {
+  getOnChainAccount,
+  initSmartAccount,
+  ownerAccount,
+  publicClient,
+  walletState,
+} from './wallet.js';
+import { createOnChainSync, sendOnChainError } from './onchain.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +52,12 @@ const razorpay = createRazorpay({
   webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
 });
 const auth = requireUser(supabase);
+const onChain = createOnChainSync({
+  publicClient,
+  getAccount: getOnChainAccount,
+  ledger,
+  rate: Number(process.env.DEMO_ETH_INR_RATE),
+});
 
 app.use(cors());
 app.use(
@@ -464,49 +477,46 @@ app.get('/api/wallet/status', auth, async (req, res) => {
   }
 });
 
-// 2. Live ledger balance.
+// 2. Live ledger balance. Also syncs direct Base Sepolia deposits; the
+//    on-chain error is returned next to the balance, never silently dropped.
 app.get('/api/wallet/balance', auth, async (req, res) => {
+  let onchain = null;
+  let onchainError = null;
+
+  try {
+    onchain = await onChain.sync(req.user.id);
+  } catch (err) {
+    onchainError = {
+      error: err.message,
+      code: err.code || 'ONCHAIN_SYNC_FAILED',
+    };
+    console.error('[On-chain Sync]', err.message);
+  }
+
   try {
     const balance = await ledger.getBalance(req.user.id);
-    return res.json(balance);
+    return res.json({ ...balance, onchain, onchainError });
   } catch (err) {
     console.error('[Wallet Balance]', err.message);
     return sendLedgerError(res, err);
   }
 });
 
-// 2b. On-chain Base Sepolia address and balance (MetaMask).
-app.get('/api/wallet/onchain', auth, async (_req, res) => {
+// 2b. On-chain Base Sepolia address, balance, and deposit sync (MetaMask).
+app.get('/api/wallet/onchain', auth, async (req, res) => {
   try {
-    if (!ownerAccount) {
-      return res.status(503).json({
-        error:
-          'OWNER_PRIVATE_KEY is not configured on the backend, so no Base Sepolia address exists.',
-        code: 'ONCHAIN_KEY_NOT_CONFIGURED',
-      });
-    }
-    const smartAccountAddress = walletState.isLive
-      ? walletState.smartAccountAddress
-      : null;
-    const address = smartAccountAddress || ownerAccount.address;
-    const wei = await publicClient.getBalance({ address });
+    const wallet = await onChain.sync(req.user.id);
     return res.json({
-      address,
-      ownerAddress: ownerAccount.address,
-      smartAccountAddress,
-      kind: smartAccountAddress ? 'kernel-smart-account' : 'owner-eoa',
+      ...wallet,
       network: 'Base Sepolia',
       chainId: 84532,
-      balanceWei: wei.toString(),
-      balanceEth: Number(formatEther(wei)),
-      explorer: `https://sepolia.basescan.org/address/${address}`,
+      explorer: `https://sepolia.basescan.org/address/${wallet.address}`,
+      smartAccountAddress: wallet.address,
+      kind: 'kernel-smart-account',
     });
   } catch (err) {
     console.error('[On-chain Wallet]', err.message);
-    return res.status(502).json({
-      error: err.message,
-      code: 'ONCHAIN_READ_FAILED',
-    });
+    return sendOnChainError(res, err);
   }
 });
 

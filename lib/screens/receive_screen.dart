@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -25,11 +27,19 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   OnChainWallet? _wallet;
   String? _error;
   bool _busy = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _refresh() async {

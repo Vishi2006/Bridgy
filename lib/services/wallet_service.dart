@@ -52,6 +52,20 @@ class WalletStatus {
   final bool isLive;
 }
 
+class WalletBalance {
+  const WalletBalance({
+    required this.balanceInr,
+    this.onchainEth,
+    this.onchainAddress,
+    this.onchainError,
+  });
+
+  final double balanceInr;
+  final double? onchainEth;
+  final String? onchainAddress;
+  final String? onchainError;
+}
+
 class TopUpOrder {
   const TopUpOrder({
     required this.id,
@@ -207,9 +221,24 @@ class WalletService {
     );
   }
 
-  static Future<double> getBalance() async {
+  static Future<WalletBalance> getBalance() async {
     final body = await _request('GET', '/api/wallet/balance');
-    return _number(body['balanceInr']);
+    final onchain = body['onchain'];
+    final onchainError = body['onchainError'];
+
+    return WalletBalance(
+      balanceInr: _number(body['balanceInr']),
+      onchainEth: onchain is Map<String, dynamic>
+          ? _number(onchain['balanceEth'])
+          : null,
+      onchainAddress: onchain is Map<String, dynamic>
+          ? onchain['address'] as String?
+          : null,
+      onchainError: onchainError is Map<String, dynamic>
+          ? '${onchainError['error'] ?? 'sync failed'} '
+                '(${onchainError['code'] ?? 'ONCHAIN_SYNC_FAILED'})'
+          : null,
+    );
   }
 
   static Future<List<Map<String, dynamic>>> getTransactions({

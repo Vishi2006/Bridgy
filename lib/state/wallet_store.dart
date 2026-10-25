@@ -26,6 +26,9 @@ class WalletStore extends ChangeNotifier {
   double _balance = 0;
   bool _loaded = false;
   String? _error;
+  double? _onchainEth;
+  String? _onchainAddress;
+  String? _onchainError;
   List<WalletTx> _transactions = const [];
 
   double get balance => _balance;
@@ -36,6 +39,14 @@ class WalletStore extends ChangeNotifier {
 
   /// Exact backend error, shown in the UI. Null when the last read succeeded.
   String? get error => _error;
+
+  /// Base Sepolia ETH balance at the user's smart account.
+  double? get onchainEth => _onchainEth;
+
+  String? get onchainAddress => _onchainAddress;
+
+  /// Non-null when the chain read or demo-rate credit failed.
+  String? get onchainError => _onchainError;
 
   String get _wholePart {
     final whole = _balance.toStringAsFixed(2).split('.')[0];
@@ -58,9 +69,12 @@ class WalletStore extends ChangeNotifier {
   /// local balance or seeded transaction list to fall back to.
   Future<void> refresh() async {
     try {
-      final balance = await WalletService.getBalance();
+      final snapshot = await WalletService.getBalance();
       final rows = await WalletService.getTransactions();
-      _balance = balance;
+      _balance = snapshot.balanceInr;
+      _onchainEth = snapshot.onchainEth;
+      _onchainAddress = snapshot.onchainAddress;
+      _onchainError = snapshot.onchainError;
       _loaded = true;
       _error = null;
       _transactions = rows.map(_mapTransaction).toList(growable: false);
@@ -87,6 +101,9 @@ class WalletStore extends ChangeNotifier {
     _balance = 0;
     _loaded = false;
     _error = null;
+    _onchainEth = null;
+    _onchainAddress = null;
+    _onchainError = null;
     _transactions = const [];
     notifyListeners();
   }
@@ -96,11 +113,12 @@ class WalletStore extends ChangeNotifier {
     final merchant = '${row['merchantName'] ?? 'Transaction'}';
     final amount = (row['amountInr'] as num?)?.toDouble() ?? 0;
     final createdAt = DateTime.tryParse('${row['createdAt'] ?? ''}');
+    final credit = status == 'TOPUP' || status == 'CRYPTO_TOPUP';
     return WalletTx(
       id: '${row['id'] ?? ''}',
       title: merchant,
       subtitle: _formatDate(createdAt) ?? 'Just now',
-      amount: status == 'TOPUP' ? amount : -amount,
+      amount: credit ? amount : -amount,
       kind: status.toLowerCase(),
     );
   }

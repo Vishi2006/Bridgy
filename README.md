@@ -315,7 +315,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://bridgy-backend.vercel.app/api/w
 
 Required on the host: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_REDIRECT_URL`. Without the service-role key the backend refuses to start, because wallet writes must never use the anon key.
 
-Optional: `OPENROUTER_API_KEY` (or a real `AGENT_API_KEY`), `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `OWNER_PRIVATE_KEY`, `ZERODEV_PROJECT_ID`, `BASE_SEPOLIA_RPC_URL`, `BRIDGY_UPI_VAULT`, `MERCHANT_SETTLEMENT_READY`.
+Optional: `OPENROUTER_API_KEY` (or a real `AGENT_API_KEY`), `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `OWNER_PRIVATE_KEY`, `ZERODEV_PROJECT_ID`, `BASE_SEPOLIA_RPC_URL`, `BRIDGY_UPI_VAULT`, `MERCHANT_SETTLEMENT_READY`, `DEMO_ETH_INR_RATE`.
 
 Until the new routes are deployed, the release app shows `Cannot GET /api/wallet/balance` verbatim. There is no localhost fallback in the release build. A user must sign up before `auth.users` has rows; an empty `auth.users` table in the SQL editor means no account has been created yet.
 
@@ -327,6 +327,15 @@ Top-up has two separate rails:
 | Base Sepolia ETH | On-chain balance at the receive address | Yes; testnet ETH has no cash value |
 
 The Top up screen links to the Base Sepolia receive screen, so testnet ETH can be sent and watched without Razorpay keys. INR top-up stays unavailable until Razorpay keys are set.
+
+### Direct Base Sepolia deposit
+
+1. The app shows a per-user Kernel smart account address (derived from the user id through ZeroDev; the address is stable for that user).
+2. Send testnet ETH from MetaMask or a faucet to that address.
+3. The backend reads the balance on `GET /api/wallet/balance` and `GET /api/wallet/onchain`, then credits the difference to the INR ledger at `DEMO_ETH_INR_RATE`.
+4. The home screen polls every 5 seconds; the balance and the ETH line update together. `credit_onchain_deposit` locks the wallet row and compares `onchain_seen_wei`, so two polls cannot double-credit.
+
+At `DEMO_ETH_INR_RATE=100000`, `0.005 ETH` credits `₹500.00`. This is a sandbox conversion; testnet ETH has no cash value. The ETH balance is also shown separately on the receive screen.
 
 Email confirmation links can land on `GET /auth/callback`; that page forwards the query and fragment to `bridgy://login-callback` and shows an **Open Bridgy** button for in-app browsers. The app also verifies `token_hash` links itself. Set the Supabase Site URL to an https URL and keep `bridgy://login-callback` in the redirect allow list.
 
@@ -389,7 +398,9 @@ cd Backend && npm test
 | `test/policy_test.dart` | Per-transaction boundary, daily cap, expiry, UPI parsing |
 | `test/upi_checkout_test.dart` | Allow, owner approval, block, malformed link, API error |
 | `test/auth_screen_test.dart` | Email, password, magic link, validation, Google button |
-| `test/top_up_screen_test.dart` | Razorpay link, polling, paid credit, PSP error, expiry |
+| `test/top_up_screen_test.dart` | Razorpay link, polling, paid credit, PSP error, expiry, testnet link |
+| `test/wallet_service_test.dart` | Auth header, balance, on-chain fields, PSP errors |
+| `test/wallet_store_test.dart` | Backend history, on-chain fields, sign-out clear |
 | `test/receive_screen_test.dart` | On-chain address, ETH balance, RPC error |
 | `test/macro_test.dart` | App selection, ADB-safe query, launch and tap order |
 | `test/widget_test.dart` | Home, send, agent, composer, font loading |
@@ -405,6 +416,7 @@ The widget tests load Plus Jakarta Sans through `FontLoader`. Without it, Ahem m
 - Wire the ERC-4337 session key and the owner validator on Base Sepolia. `GET /api/wallet/onchain` currently exposes the owner EOA, not a Kernel account.
 - Add Razorpay merchant keys, then run one live ₹1 UPI payment and verify the webhook credit.
 - Add a merchant payout rail before enabling send/withdraw; the backend currently returns `SETTLEMENT_NOT_CONFIGURED` on purpose.
+- Add per-user key custody before real money. The current on-chain demo derives per-user Kernel addresses but signs with one backend owner key.
 - Add a Google OAuth client secret so the Google button works; email auth already works.
 - Link the ADB console into `AppShell`.
 - Add crash reporting and a Play internal-test upload. The signed AAB is built; the Play account step is external.

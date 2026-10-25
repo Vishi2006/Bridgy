@@ -11,7 +11,17 @@ void main() {
     WalletService.tokenOverride = 'test-token';
     WalletService.clientOverride = MockClient((request) async {
       if (request.url.path == '/api/wallet/balance') {
-        return http.Response(jsonEncode({'balanceInr': 250}), 200);
+        return http.Response(
+          jsonEncode({
+            'balanceInr': 250,
+            'onchain': {
+              'address': '0xc2380dea8E9c66A5e0dFe54397A1bDc8eCA41592',
+              'balanceEth': 0.005,
+            },
+            'onchainError': null,
+          }),
+          200,
+        );
       }
       if (request.url.path == '/api/wallet/transactions') {
         return http.Response(
@@ -53,6 +63,11 @@ void main() {
     expect(WalletStore.instance.loaded, isTrue);
     expect(WalletStore.instance.balance, 250);
     expect(WalletStore.instance.balanceText, '₹250.00');
+    expect(WalletStore.instance.onchainEth, 0.005);
+    expect(
+      WalletStore.instance.onchainAddress,
+      '0xc2380dea8E9c66A5e0dFe54397A1bDc8eCA41592',
+    );
     expect(WalletStore.instance.transactions.length, 2);
 
     final topup = WalletStore.instance.transactions.first;

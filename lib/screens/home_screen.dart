@@ -402,6 +402,17 @@ class _HeaderState extends State<_Header> with WidgetsBindingObserver {
                     ),
                   ),
                 ],
+                if (WalletStore.instance.onchainError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Base Sepolia sync: ${WalletStore.instance.onchainError}',
+                    style: uText(
+                      size: 10,
+                      color: const Color(0xFFFCA5A5),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -507,6 +518,17 @@ class _HeaderState extends State<_Header> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
+                  if (WalletStore.instance.onchainEth != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${WalletStore.instance.onchainEth!.toStringAsFixed(6)} ETH · Base Sepolia',
+                      style: uText(
+                        size: 10,
+                        weight: FontWeight.w600,
+                        color: const Color(0xFF525252),
+                      ),
+                    ),
+                  ],
                   const Spacer(),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,

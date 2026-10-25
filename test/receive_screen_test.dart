@@ -33,6 +33,8 @@ void main() {
     expect(find.byKey(const Key('receive-balance')), findsOneWidget);
     expect(find.text('0.000000 ETH'), findsOneWidget);
     expect(find.byKey(const Key('receive-copy')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('backend error is shown verbatim', (tester) async {
@@ -51,5 +53,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('receive-retry')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
   });
 }

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { createPublicClient, http, parseEther, formatEther, getAddress } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
@@ -81,6 +82,45 @@ let kernelClientInstance = null;
 /**
  * Initialize the ZeroDev ERC-4337 Kernel Account
  */
+const onChainAccountCache = new Map();
+
+/**
+ * Per-user counterfactual Kernel account.
+ *
+ * The index is derived from the Supabase user id, so every user gets a distinct
+ * Base Sepolia address while the single backend owner key remains the signer.
+ * This is a demo custody model; production needs per-user key custody.
+ */
+export async function getOnChainAccount(ownerId) {
+  if (!ownerAccount || !ZERODEV_PROJECT_ID) return null;
+
+  const key = String(ownerId);
+  const cached = onChainAccountCache.get(key);
+  if (cached) return cached;
+
+  const digest = crypto
+    .createHash('sha256')
+    .update(key)
+    .digest('hex')
+    .slice(0, 16);
+
+  const validator = await signerToEcdsaValidator(publicClient, {
+    signer: ownerAccount,
+    entryPoint: { address: ENTRY_POINT_ADDRESS, version: '0.7' },
+    kernelVersion: KERNEL_VERSION,
+  });
+
+  const account = await createKernelAccount(publicClient, {
+    entryPoint: { address: ENTRY_POINT_ADDRESS, version: '0.7' },
+    kernelVersion: KERNEL_VERSION,
+    plugins: { sudo: validator },
+    index: BigInt(`0x${digest}`),
+  });
+
+  onChainAccountCache.set(key, account);
+  return account;
+}
+
 export async function initSmartAccount() {
   if (!ownerAccount) {
     console.warn('[Bridgy Wallet] No owner key; skipping smart account init.');

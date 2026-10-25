@@ -336,6 +336,48 @@ export function createLedger(supabase) {
     return data ? mapTopUp(data) : null;
   }
 
+  async function setSmartWalletAddress(ownerId, address) {
+    const { error } = await supabase
+      .from('wallets')
+      .update({ smart_wallet_address: address })
+      .eq('owner_id', ownerId);
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'WALLET_WRITE_FAILED',
+      });
+    }
+  }
+
+  async function creditOnChainDeposit(ownerId, observedWei, rate) {
+    const { data, error } = await supabase.rpc('credit_onchain_deposit', {
+      p_owner_id: ownerId,
+      p_observed_wei: observedWei,
+      p_eth_inr_rate: rate,
+    });
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'ONCHAIN_CREDIT_FAILED',
+      });
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      throw new LedgerError('credit_onchain_deposit returned no row', {
+        status: 502,
+        code: 'ONCHAIN_CREDIT_EMPTY',
+      });
+    }
+    return {
+      creditedInr: Number(row.credited_inr),
+      newBalance: Number(row.new_balance),
+      deltaWei: Number(row.delta_wei),
+    };
+  }
+
   async function debit(
     ownerId,
     {
@@ -400,6 +442,8 @@ export function createLedger(supabase) {
     creditTopUp,
     markTopUp,
     debit,
+    setSmartWalletAddress,
+    creditOnChainDeposit,
   };
 }
 

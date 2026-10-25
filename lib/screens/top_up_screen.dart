@@ -264,6 +264,12 @@ class _TopUpScreenState extends State<TopUpScreen> {
                 style: uiStyle(size: 11, color: AppColors.muted, height: 1.5),
               ),
               const SizedBox(height: 4),
+              Text(
+                'Testnet ETH is credited to the ₹ ledger at the backend demo '
+                'rate. It has no cash value.',
+                textAlign: TextAlign.center,
+                style: uiStyle(size: 10, color: AppColors.muted, height: 1.45),
+              ),
               TextButton(
                 key: const Key('topup-testnet'),
                 onPressed: () => Navigator.of(context).push(
@@ -355,6 +361,13 @@ class _TopUpScreenState extends State<TopUpScreen> {
                       color: AppColors.card,
                     ),
                   ),
+                  if (store.onchainEth != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${store.onchainEth!.toStringAsFixed(6)} ETH · Base Sepolia',
+                      style: uiStyle(size: 10, color: const Color(0x99FFFFFF)),
+                    ),
+                  ],
                 ],
               ),
               const Spacer(),
