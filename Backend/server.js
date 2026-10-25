@@ -6,15 +6,14 @@ import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 
 import { askModel, parseScreen, validateCommand } from './agent.js';
-import { createLedger, sendLedgerError } from './ledger.js';
+import { requireUser } from './auth.js';
+import { LedgerError, createLedger, sendLedgerError } from './ledger.js';
 import {
-  initSmartAccount,
-  walletState,
-  executeAgentPayment,
-  executeOwnerPayment,
-  renewSessionKey,
-  updatePolicyLimits,
-} from './wallet.js';
+  RazorpayError,
+  createRazorpay,
+  sendRazorpayError,
+} from './razorpay.js';
+import { initSmartAccount, walletState } from './wallet.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,20 +22,38 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const app = express();
 const port = Number(process.env.PORT || 8787);
 
-// Initialize Supabase Client
-const supabaseUrl = process.env.SUPABASE_URL || `https://${process.env.SUPABASE_PROJECT_REF}.supabase.co`;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+// Server-side Supabase client. The service role is required for wallet writes;
+// shipping this key to the app would let anyone mint balance.
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const appRedirectUrl = process.env.APP_REDIRECT_URL || 'bridgy://login-callback';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('⚠️ Warning: SUPABASE_URL or SUPABASE_ANON_KEY not set.');
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error(
+    'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required on the backend.',
+  );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 const ledger = createLedger(supabase);
+const razorpay = createRazorpay({
+  keyId: process.env.RAZORPAY_KEY_ID,
+  keySecret: process.env.RAZORPAY_KEY_SECRET,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+});
+const auth = requireUser(supabase);
 
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(
+  express.json({
+    limit: '5mb',
+    verify: (req, _res, buffer) => {
+      req.rawBody = buffer;
+    },
+  }),
+);
 
 // ── Root Endpoint: Clean Welcome Page (No JSON / No Leaks) ─────────────────
 app.get('/', (_req, res) => {
@@ -405,117 +422,291 @@ app.post('/api/terminal-logs', async (req, res) => {
   }
 });
 
-// ── Smart Wallet & Policy Engine Endpoints ──────────────────────────────────
+// ── Authenticated Wallet & Top-Up Endpoints ─────────────────────────────────
 
-// 1. Get Wallet & Policy Status
-app.get('/api/wallet/status', (_req, res) => {
-  res.json({
-    status: 'ok',
-    ...walletState,
-    currentTime: Math.floor(Date.now() / 1000),
-  });
-});
+function expirySeconds(value) {
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
+}
 
-// 1b. Live ledger balance (Supabase is the only source)
-app.get('/api/wallet/balance', async (_req, res) => {
+// 1. Wallet, balance, and policy for the signed-in user.
+app.get('/api/wallet/status', auth, async (req, res) => {
   try {
-    const { balanceInr } = await ledger.getBalance();
-    return res.json({ balanceInr });
-  } catch (err) {
-    console.error('[Ledger Balance]', err.message);
-    return sendLedgerError(res, err);
-  }
-});
-
-// 1c. Top up the wallet. Atomic credit in Supabase; no local fallback.
-app.post('/api/wallet/topup', async (req, res) => {
-  const { amountInr } = req.body ?? {};
-
-  try {
-    const result = await ledger.topUp(amountInr);
-    return res.status(201).json({ success: true, ...result });
-  } catch (err) {
-    console.error('[Ledger TopUp]', err.message);
-    return sendLedgerError(res, err);
-  }
-});
-
-// 2. Agent Autonomous Payment (Session Key Policy Check)
-app.post('/api/wallet/pay-agent', async (req, res) => {
-  const { amountInr, merchantName, merchantVpa, targetAddress } = req.body ?? {};
-
-  if (!amountInr || isNaN(Number(amountInr))) {
-    return res.status(400).json({ error: 'Valid amountInr is required' });
-  }
-
-  try {
-    const tx = await executeAgentPayment({
-      amountInr: Number(amountInr),
-      merchantName: merchantName || 'Quick Commerce Merchant',
-      merchantVpa: merchantVpa || 'merchant@upi',
-      targetAddress,
+    const wallet = await ledger.getStatus(req.user.id);
+    return res.json({
+      status: 'ok',
+      isLive: walletState.isLive,
+      network: walletState.network,
+      smartAccountAddress: wallet.smartAccountAddress,
+      agentSessionAddress: walletState.agentSessionAddress,
+      balanceInr: wallet.balanceInr,
+      policy: {
+        perTxLimitInr: wallet.perTxLimitInr,
+        dailyLimitInr: wallet.dailyLimitInr,
+        spentTodayInr: wallet.spentTodayInr,
+        validUntilTimestamp: expirySeconds(wallet.policyExpiry),
+      },
+      currentTime: Math.floor(Date.now() / 1000),
     });
+  } catch (err) {
+    console.error('[Wallet Status]', err.message);
+    return sendLedgerError(res, err);
+  }
+});
 
-    // Also record in Supabase if configured
-    try {
-      await supabase.from('wallets').upsert({
-        smart_wallet_address: walletState.smartAccountAddress,
-        spent_today_inr: walletState.policy.spentTodayInr,
+// 2. Live ledger balance.
+app.get('/api/wallet/balance', auth, async (req, res) => {
+  try {
+    const balance = await ledger.getBalance(req.user.id);
+    return res.json(balance);
+  } catch (err) {
+    console.error('[Wallet Balance]', err.message);
+    return sendLedgerError(res, err);
+  }
+});
+
+// 3. Recent ledger rows for this user.
+app.get('/api/wallet/transactions', auth, async (req, res) => {
+  try {
+    const transactions = await ledger.listTransactions(
+      req.user.id,
+      req.query.limit,
+    );
+    return res.json({ transactions });
+  } catch (err) {
+    console.error('[Wallet Transactions]', err.message);
+    return sendLedgerError(res, err);
+  }
+});
+
+// 4. Create a Razorpay payment link. The UPI ID and PIN are entered inside
+//    Razorpay or the UPI app, never in Bridgy.
+app.post('/api/wallet/topup', auth, async (req, res) => {
+  try {
+    razorpay.assertConfigured();
+    const topup = await ledger.createTopUp(req.user.id, req.body?.amountInr);
+    const link = await razorpay.createPaymentLink({
+      amountInr: topup.amountInr,
+      referenceId: topup.id,
+      description: 'Bridgy wallet top-up',
+    });
+    const attached = await ledger.attachCheckout(topup.id, {
+      providerOrderId: link.id,
+      checkoutUrl: link.shortUrl,
+    });
+    return res.status(201).json({ success: true, ...attached });
+  } catch (err) {
+    console.error('[Wallet TopUp]', err.message);
+    if (err instanceof RazorpayError) return sendRazorpayError(res, err);
+    return sendLedgerError(res, err);
+  }
+});
+
+// 5. Poll a top-up. Server-side Razorpay verification is the only path that
+//    can mark it paid, so a client cannot credit itself.
+app.get('/api/wallet/topup/:id', auth, async (req, res) => {
+  try {
+    const topup = await ledger.getTopUp(req.user.id, req.params.id);
+    if (topup.status !== 'PENDING') {
+      return res.json(topup);
+    }
+    if (!topup.providerOrderId) {
+      throw new LedgerError('Top-up has no provider order', {
+        status: 409,
+        code: 'TOPUP_NO_ORDER',
       });
-    } catch (_) {}
+    }
 
-    return res.json({
-      success: true,
-      message: 'Transaction authorized autonomously by AI Agent Session Key.',
-      transaction: tx,
-    });
+    const link = await razorpay.getPaymentLink(topup.providerOrderId);
+    if (link.status === 'paid') {
+      const paymentId = link.payments[0]?.payment_id || `link_${link.id}`;
+      const credit = await ledger.creditTopUp(topup.id, paymentId);
+      return res.json({
+        ...topup,
+        status: 'PAID',
+        balanceInr: credit.balanceInr,
+        transactionId: credit.transactionId,
+      });
+    }
+    if (link.status === 'cancelled' || link.status === 'expired') {
+      const updated = await ledger.markTopUp(topup.id, 'EXPIRED');
+      return res.json(updated || { ...topup, status: 'EXPIRED' });
+    }
+    return res.json({ ...topup, providerStatus: link.status });
   } catch (err) {
-    return res.status(err.status || 500).json({
-      error: err.message,
-      code: err.code || 'AGENT_PAY_FAILED',
-      requires_owner_approval: Boolean(err.requires_owner_approval),
-    });
+    console.error('[Wallet TopUp Status]', err.message);
+    if (err instanceof RazorpayError) return sendRazorpayError(res, err);
+    return sendLedgerError(res, err);
   }
 });
 
-// 3. Owner-Approved Payment (Bypasses Session Key Limit)
-app.post('/api/wallet/pay-owner', async (req, res) => {
-  const { amountInr, merchantName, merchantVpa, targetAddress, biometricApproved } = req.body ?? {};
-
-  if (!amountInr || isNaN(Number(amountInr))) {
-    return res.status(400).json({ error: 'Valid amountInr is required' });
-  }
-
+// 6. Razorpay webhook. Signature over the raw body; idempotent credit.
+app.post('/api/wallet/razorpay/webhook', async (req, res) => {
   try {
-    const tx = await executeOwnerPayment({
-      amountInr: Number(amountInr),
+    const signature = req.get('x-razorpay-signature');
+    if (!razorpay.verifyWebhook(req.rawBody, signature)) {
+      return res.status(400).json({
+        error: 'Invalid Razorpay webhook signature',
+        code: 'INVALID_SIGNATURE',
+      });
+    }
+
+    const event = req.body?.event;
+    const linkId = req.body?.payload?.payment_link?.entity?.id;
+    if (!linkId) {
+      return res.status(400).json({
+        error: 'Webhook has no payment_link id',
+        code: 'INVALID_WEBHOOK',
+      });
+    }
+
+    const topup = await ledger.findTopUpByOrderId(linkId);
+
+    if (event === 'payment_link.paid' || event === 'payment.captured') {
+      const paymentId =
+        req.body?.payload?.payment?.entity?.id || `link_${linkId}`;
+      const credit = await ledger.creditTopUp(topup.id, paymentId);
+      return res.json({ ok: true, ...credit });
+    }
+
+    if (event === 'payment_link.cancelled' || event === 'payment_link.expired') {
+      await ledger.markTopUp(
+        topup.id,
+        event.endsWith('expired') ? 'EXPIRED' : 'FAILED',
+      );
+      return res.json({ ok: true });
+    }
+
+    return res.json({ ok: true, ignored: event || 'unknown' });
+  } catch (err) {
+    console.error('[Razorpay Webhook]', err.message);
+    if (err instanceof RazorpayError) return sendRazorpayError(res, err);
+    return sendLedgerError(res, err);
+  }
+});
+
+// 7. Agent payment: policy checks then an atomic debit.
+app.post('/api/wallet/pay-agent', auth, async (req, res) => {
+  const { amountInr, merchantName, merchantVpa } = req.body ?? {};
+  try {
+    const amount = Number(amountInr);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new LedgerError('Valid amountInr is required', {
+        status: 400,
+        code: 'INVALID_AMOUNT',
+      });
+    }
+
+    const wallet = await ledger.getStatus(req.user.id);
+    const expiry = Date.parse(wallet.policyExpiry);
+    if (Number.isFinite(expiry) && expiry <= Date.now()) {
+      throw new LedgerError('Session key expired. Renew the policy.', {
+        status: 402,
+        code: 'POLICY_EXPIRED',
+      });
+    }
+    if (amount > wallet.perTxLimitInr) {
+      throw new LedgerError(
+        `Amount exceeds the ₹${wallet.perTxLimitInr} per-transaction limit`,
+        { status: 402, code: 'OWNER_APPROVAL_REQUIRED' },
+      );
+    }
+    if (wallet.spentTodayInr + amount > wallet.dailyLimitInr) {
+      throw new LedgerError(
+        `Daily limit ₹${wallet.dailyLimitInr} exceeded`,
+        { status: 402, code: 'DAILY_LIMIT_EXCEEDED' },
+      );
+    }
+
+    const result = await ledger.debit(req.user.id, {
+      amountInr: amount,
       merchantName: merchantName || 'Quick Commerce Merchant',
       merchantVpa: merchantVpa || 'merchant@upi',
-      targetAddress,
+      status: 'AGENT_PAID',
     });
 
     return res.json({
       success: true,
-      message: 'Transaction authorized and signed with Owner Master Key.',
-      biometricApproved: Boolean(biometricApproved),
-      transaction: tx,
+      message: 'Transaction authorized by the agent policy.',
+      transaction: { type: 'AGENT_PAID', amountInr: amount, ...result },
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('[Agent Payment]', err.message);
+    return sendLedgerError(res, err);
   }
 });
 
-// 4. Renew Session Key (+24h)
-app.post('/api/wallet/renew-session', (_req, res) => {
-  const result = renewSessionKey(86400);
-  return res.json(result);
+// 8. Owner payment: skips the policy caps, still needs balance.
+app.post('/api/wallet/pay-owner', auth, async (req, res) => {
+  const { amountInr, merchantName, merchantVpa, biometricApproved } =
+    req.body ?? {};
+  try {
+    const amount = Number(amountInr);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new LedgerError('Valid amountInr is required', {
+        status: 400,
+        code: 'INVALID_AMOUNT',
+      });
+    }
+
+    const result = await ledger.debit(req.user.id, {
+      amountInr: amount,
+      merchantName: merchantName || 'Quick Commerce Merchant',
+      merchantVpa: merchantVpa || 'merchant@upi',
+      status: 'OWNER_PAID',
+    });
+
+    return res.json({
+      success: true,
+      message: 'Transaction approved by the owner.',
+      biometricApproved: Boolean(biometricApproved),
+      transaction: { type: 'OWNER_PAID', amountInr: amount, ...result },
+    });
+  } catch (err) {
+    console.error('[Owner Payment]', err.message);
+    return sendLedgerError(res, err);
+  }
 });
 
-// 5. Update Policy Configuration
-app.post('/api/wallet/policy', (req, res) => {
+// 9. Renew the policy window by 24 hours.
+app.post('/api/wallet/renew-session', auth, async (req, res) => {
+  try {
+    const wallet = await ledger.renewPolicy(req.user.id, 24);
+    return res.json({
+      success: true,
+      policyExpiry: wallet.policyExpiry,
+      policy: {
+        perTxLimitInr: wallet.perTxLimitInr,
+        dailyLimitInr: wallet.dailyLimitInr,
+        spentTodayInr: wallet.spentTodayInr,
+      },
+    });
+  } catch (err) {
+    console.error('[Renew Session]', err.message);
+    return sendLedgerError(res, err);
+  }
+});
+
+// 10. Update policy limits.
+app.post('/api/wallet/policy', auth, async (req, res) => {
   const { perTxLimitInr, dailyLimitInr } = req.body ?? {};
-  const updated = updatePolicyLimits({ perTxLimitInr, dailyLimitInr });
-  return res.json({ success: true, policy: updated });
+  try {
+    const wallet = await ledger.updatePolicy(req.user.id, {
+      perTxLimitInr,
+      dailyLimitInr,
+    });
+    return res.json({
+      success: true,
+      policy: {
+        perTxLimitInr: wallet.perTxLimitInr,
+        dailyLimitInr: wallet.dailyLimitInr,
+        spentTodayInr: wallet.spentTodayInr,
+      },
+    });
+  } catch (err) {
+    console.error('[Wallet Policy]', err.message);
+    return sendLedgerError(res, err);
+  }
 });
 
 // 6. Judge & Live Demo Dashboard

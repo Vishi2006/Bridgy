@@ -1,123 +1,137 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+
 import 'package:http/http.dart' as http;
 
-class WalletPaymentResult {
-  final bool success;
-  final String message;
-  final String? txHash;
-  final String? type;
-  final bool requiresOwnerApproval;
-  final String? error;
-
-  const WalletPaymentResult({
-    required this.success,
-    required this.message,
-    this.txHash,
-    this.type,
-    this.requiresOwnerApproval = false,
-    this.error,
-  });
-}
+import 'backend.dart';
 
 /// Raised when the wallet API returns an error. The message is the exact text
-/// from the backend, so callers can show it without inventing a fallback.
+/// from the backend, so callers show it without inventing a fallback.
 class WalletApiException implements Exception {
-  const WalletApiException(this.message, {this.statusCode});
+  const WalletApiException(this.message, {this.statusCode, this.code});
 
   final String message;
   final int? statusCode;
+  final String? code;
 
   @override
   String toString() => message;
 }
 
-class TopUpResult {
-  const TopUpResult({
-    required this.amountInr,
-    required this.balanceInr,
-    required this.transactionId,
+class WalletPaymentResult {
+  const WalletPaymentResult({
+    required this.message,
+    this.txHash,
+    this.type,
+    this.balanceInr,
   });
 
-  final double amountInr;
+  final String message;
+  final String? txHash;
+  final String? type;
+  final double? balanceInr;
+}
+
+class WalletStatus {
+  const WalletStatus({
+    required this.balanceInr,
+    required this.perTxLimitInr,
+    required this.dailyLimitInr,
+    required this.spentTodayInr,
+    required this.policyExpiry,
+    required this.smartAccountAddress,
+    required this.isLive,
+  });
+
   final double balanceInr;
-  final String transactionId;
+  final double perTxLimitInr;
+  final double dailyLimitInr;
+  final double spentTodayInr;
+  final DateTime policyExpiry;
+  final String smartAccountAddress;
+  final bool isLive;
+}
+
+class TopUpOrder {
+  const TopUpOrder({
+    required this.id,
+    required this.amountInr,
+    required this.status,
+    this.checkoutUrl,
+    this.balanceInr,
+  });
+
+  final String id;
+  final double amountInr;
+  final String status;
+  final String? checkoutUrl;
+  final double? balanceInr;
+
+  bool get isPaid => status == 'PAID';
+  bool get isFinished =>
+      status == 'PAID' || status == 'FAILED' || status == 'EXPIRED';
 }
 
 class WalletService {
-  /// Production backend. No localhost or student-machine override ships here.
+  /// Production backend. No localhost or machine-specific override exists.
   static const String defaultBaseUrl = 'https://bridgy-backend.vercel.app';
 
-  static Future<String> getBaseUrl() async => defaultBaseUrl;
-
-  /// Live balance from the Supabase ledger through the backend.
-  ///
-  /// Throws [WalletApiException] with the backend message on any failure; it
-  /// never returns a cached or local number.
-  static Future<double> getBalance() async {
-    final base = await getBaseUrl();
-    final res = await http
-        .get(Uri.parse('$base/api/wallet/balance'))
-        .timeout(const Duration(seconds: 10));
-
-    final body = _decodeObject(res);
-    if (res.statusCode != 200) {
-      throw WalletApiException(_errorMessage(body, res.statusCode));
-    }
-
-    final balance = body['balanceInr'];
-    if (balance is! num) {
-      throw WalletApiException(
-        'Backend returned no balanceInr (HTTP ${res.statusCode})',
-        statusCode: res.statusCode,
+  static Future<Map<String, String>> _headers() async {
+    final token = BridgyBackend.accessToken;
+    if (token == null || token.isEmpty) {
+      throw const WalletApiException(
+        'Sign in required: no Supabase session.',
+        statusCode: 401,
+        code: 'UNAUTHORIZED',
       );
     }
-    return balance.toDouble();
+    return {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
   }
 
-  /// Credits the wallet. The backend writes balance, top-up row, and ledger row
-  /// in one transaction and returns the authoritative new balance.
-  static Future<TopUpResult> topUp(double amountInr) async {
-    final base = await getBaseUrl();
-    final res = await http
-        .post(
-          Uri.parse('$base/api/wallet/topup'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'amountInr': amountInr}),
-        )
-        .timeout(const Duration(seconds: 15));
+  static Uri _uri(String path) => Uri.parse('$defaultBaseUrl$path');
 
-    final body = _decodeObject(res);
-    if (res.statusCode != 201) {
-      throw WalletApiException(_errorMessage(body, res.statusCode));
-    }
+  static Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final headers = await _headers();
+    final response = switch (method) {
+      'GET' =>
+        await http
+            .get(_uri(path), headers: headers)
+            .timeout(const Duration(seconds: 15)),
+      'POST' =>
+        await http
+            .post(_uri(path), headers: headers, body: jsonEncode(body ?? {}))
+            .timeout(const Duration(seconds: 20)),
+      _ => throw WalletApiException('Unsupported method $method'),
+    };
 
-    final balance = body['balanceInr'];
-    final transactionId = body['transactionId'];
-    if (balance is! num || transactionId is! String) {
+    final decoded = _decodeObject(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw WalletApiException(
-        'Backend returned an incomplete top-up (HTTP ${res.statusCode})',
-        statusCode: res.statusCode,
+        _errorMessage(decoded, response.statusCode),
+        statusCode: response.statusCode,
+        code: decoded['code'] as String?,
       );
     }
-
-    return TopUpResult(
-      amountInr: (body['amountInr'] as num?)?.toDouble() ?? amountInr,
-      balanceInr: balance.toDouble(),
-      transactionId: transactionId,
-    );
+    return decoded;
   }
 
-  static Map<String, dynamic> _decodeObject(http.Response res) {
+  static Map<String, dynamic> _decodeObject(http.Response response) {
     try {
-      final decoded = jsonDecode(res.body);
+      final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) return decoded;
     } on FormatException {
       // Reported below with the raw body attached.
     }
     throw WalletApiException(
-      'Backend returned invalid JSON (HTTP ${res.statusCode}): ${res.body}',
-      statusCode: res.statusCode,
+      'Backend returned invalid JSON (HTTP ${response.statusCode}): '
+      '${response.body}',
+      statusCode: response.statusCode,
     );
   }
 
@@ -130,151 +144,144 @@ class WalletService {
     return 'Wallet API failed with HTTP $statusCode';
   }
 
-  static Future<Map<String, dynamic>?> getStatus() async {
-    try {
-      final base = await getBaseUrl();
-      final res = await http
-          .get(Uri.parse('$base/api/wallet/status'))
-          .timeout(const Duration(seconds: 4));
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body) as Map<String, dynamic>;
-      }
-    } catch (e) {
-      debugPrint('[WalletService] getStatus error: $e');
+  static Future<WalletStatus> getStatus() async {
+    final body = await _request('GET', '/api/wallet/status');
+    final policy = body['policy'];
+    if (policy is! Map<String, dynamic>) {
+      throw const WalletApiException('Backend returned no policy');
     }
-    return null;
+    final validUntil = policy['validUntilTimestamp'];
+    return WalletStatus(
+      balanceInr: _number(body['balanceInr']),
+      perTxLimitInr: _number(policy['perTxLimitInr']),
+      dailyLimitInr: _number(policy['dailyLimitInr']),
+      spentTodayInr: _number(policy['spentTodayInr']),
+      policyExpiry: validUntil is num
+          ? DateTime.fromMillisecondsSinceEpoch((validUntil * 1000).toInt())
+          : DateTime.fromMillisecondsSinceEpoch(0),
+      smartAccountAddress: '${body['smartAccountAddress'] ?? ''}',
+      isLive: body['isLive'] == true,
+    );
+  }
+
+  static Future<double> getBalance() async {
+    final body = await _request('GET', '/api/wallet/balance');
+    return _number(body['balanceInr']);
+  }
+
+  static Future<List<Map<String, dynamic>>> getTransactions({
+    int limit = 20,
+  }) async {
+    final body = await _request('GET', '/api/wallet/transactions?limit=$limit');
+    final rows = body['transactions'];
+    if (rows is! List) {
+      throw const WalletApiException('Backend returned no transactions list');
+    }
+    return rows.whereType<Map<String, dynamic>>().toList(growable: false);
+  }
+
+  static Future<TopUpOrder> createTopUp(double amountInr) async {
+    final body = await _request(
+      'POST',
+      '/api/wallet/topup',
+      body: {'amountInr': amountInr},
+    );
+    return _order(body);
+  }
+
+  static Future<TopUpOrder> getTopUp(String id) async {
+    final body = await _request('GET', '/api/wallet/topup/$id');
+    return _order(body);
+  }
+
+  static TopUpOrder _order(Map<String, dynamic> body) {
+    final id = body['id'];
+    if (id is! String) {
+      throw const WalletApiException('Backend returned no top-up id');
+    }
+    return TopUpOrder(
+      id: id,
+      amountInr: _number(body['amountInr']),
+      status: '${body['status'] ?? 'PENDING'}',
+      checkoutUrl: body['checkoutUrl'] as String?,
+      balanceInr: body['balanceInr'] == null
+          ? null
+          : _number(body['balanceInr']),
+    );
   }
 
   static Future<WalletPaymentResult> payWithAgent({
     required double amountInr,
     required String merchantName,
     required String merchantVpa,
-    String? targetAddress,
   }) async {
-    try {
-      final base = await getBaseUrl();
-      final res = await http
-          .post(
-            Uri.parse('$base/api/wallet/pay-agent'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'amountInr': amountInr,
-              'merchantName': merchantName,
-              'merchantVpa': merchantVpa,
-              if (targetAddress != null) 'targetAddress': targetAddress,
-            }),
-          )
-          .timeout(const Duration(seconds: 6));
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-
-      if (res.statusCode == 200 && data['success'] == true) {
-        final tx = data['transaction'] as Map<String, dynamic>?;
-        return WalletPaymentResult(
-          success: true,
-          message: data['message'] ?? 'Paid via AI Agent Session Key',
-          txHash: tx?['txHash'] as String?,
-          type: (tx?['type'] as String?) ?? 'AGENT_PAID',
-        );
-      } else {
-        return WalletPaymentResult(
-          success: false,
-          message: data['error'] ?? 'Agent payment declined',
-          error: data['error'] as String?,
-          requiresOwnerApproval: data['requires_owner_approval'] == true,
-        );
-      }
-    } catch (e) {
-      debugPrint('[WalletService] payWithAgent error: $e');
-      return WalletPaymentResult(
-        success: false,
-        message: 'Network error: $e',
-        error: e.toString(),
-      );
-    }
+    final body = await _request(
+      'POST',
+      '/api/wallet/pay-agent',
+      body: {
+        'amountInr': amountInr,
+        'merchantName': merchantName,
+        'merchantVpa': merchantVpa,
+      },
+    );
+    final tx = body['transaction'];
+    final txMap = tx is Map<String, dynamic> ? tx : const <String, dynamic>{};
+    return WalletPaymentResult(
+      message: '${body['message'] ?? 'Paid'}',
+      txHash: txMap['txHash'] as String?,
+      type: txMap['type'] as String? ?? 'AGENT_PAID',
+      balanceInr: txMap['balanceInr'] == null
+          ? null
+          : _number(txMap['balanceInr']),
+    );
   }
 
   static Future<WalletPaymentResult> payWithOwner({
     required double amountInr,
     required String merchantName,
     required String merchantVpa,
-    String? targetAddress,
     bool biometricApproved = true,
   }) async {
-    try {
-      final base = await getBaseUrl();
-      final res = await http
-          .post(
-            Uri.parse('$base/api/wallet/pay-owner'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'amountInr': amountInr,
-              'merchantName': merchantName,
-              'merchantVpa': merchantVpa,
-              'biometricApproved': biometricApproved,
-              if (targetAddress != null) 'targetAddress': targetAddress,
-            }),
-          )
-          .timeout(const Duration(seconds: 6));
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-
-      if (res.statusCode == 200 && data['success'] == true) {
-        final tx = data['transaction'] as Map<String, dynamic>?;
-        return WalletPaymentResult(
-          success: true,
-          message: data['message'] ?? 'Paid with Owner Master Key',
-          txHash: tx?['txHash'] as String?,
-          type: (tx?['type'] as String?) ?? 'OWNER_PAID',
-        );
-      } else {
-        return WalletPaymentResult(
-          success: false,
-          message: data['error'] ?? 'Owner payment failed',
-          error: data['error'] as String?,
-        );
-      }
-    } catch (e) {
-      debugPrint('[WalletService] payWithOwner error: $e');
-      return WalletPaymentResult(
-        success: false,
-        message: 'Network error: $e',
-        error: e.toString(),
-      );
-    }
+    final body = await _request(
+      'POST',
+      '/api/wallet/pay-owner',
+      body: {
+        'amountInr': amountInr,
+        'merchantName': merchantName,
+        'merchantVpa': merchantVpa,
+        'biometricApproved': biometricApproved,
+      },
+    );
+    final tx = body['transaction'];
+    final txMap = tx is Map<String, dynamic> ? tx : const <String, dynamic>{};
+    return WalletPaymentResult(
+      message: '${body['message'] ?? 'Paid'}',
+      txHash: txMap['txHash'] as String?,
+      type: txMap['type'] as String? ?? 'OWNER_PAID',
+      balanceInr: txMap['balanceInr'] == null
+          ? null
+          : _number(txMap['balanceInr']),
+    );
   }
 
-  static Future<bool> renewSession() async {
-    try {
-      final base = await getBaseUrl();
-      final res = await http
-          .post(Uri.parse('$base/api/wallet/renew-session'))
-          .timeout(const Duration(seconds: 4));
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  static Future<bool> updatePolicy({
+  static Future<WalletStatus> updatePolicy({
     required double perTxLimitInr,
     required double dailyLimitInr,
   }) async {
-    try {
-      final base = await getBaseUrl();
-      final res = await http
-          .post(
-            Uri.parse('$base/api/wallet/policy'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'perTxLimitInr': perTxLimitInr,
-              'dailyLimitInr': dailyLimitInr,
-            }),
-          )
-          .timeout(const Duration(seconds: 4));
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
+    await _request(
+      'POST',
+      '/api/wallet/policy',
+      body: {'perTxLimitInr': perTxLimitInr, 'dailyLimitInr': dailyLimitInr},
+    );
+    return getStatus();
+  }
+
+  static Future<void> renewSession() async {
+    await _request('POST', '/api/wallet/renew-session');
+  }
+
+  static double _number(Object? value) {
+    if (value is num) return value.toDouble();
+    throw WalletApiException('Backend returned a non-numeric value: $value');
   }
 }

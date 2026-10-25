@@ -1,8 +1,7 @@
-/// Wallet ledger backed by Supabase.
-///
-/// This is the only source of truth for the balance. There is no in-memory or
-/// local fallback: if Supabase rejects the read or the credit, the error is
-/// raised to the caller with its original message.
+// Wallet ledger backed by Supabase.
+//
+// Supabase is the only source of truth. There is no in-memory or local
+// fallback: every failure is raised with the original database message.
 
 export class LedgerError extends Error {
   constructor(message, { status = 500, code = 'LEDGER_ERROR' } = {}) {
@@ -13,13 +12,54 @@ export class LedgerError extends Error {
   }
 }
 
+function mapWallet(row) {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    smartAccountAddress: row.smart_wallet_address,
+    balanceInr: Number(row.balance_inr),
+    perTxLimitInr: Number(row.per_tx_limit_inr),
+    dailyLimitInr: Number(row.daily_limit_inr),
+    spentTodayInr: Number(row.spent_today_inr),
+    policyExpiry: row.policy_expiry,
+  };
+}
+
+function mapTopUp(row) {
+  return {
+    id: row.id,
+    amountInr: Number(row.amount_inr),
+    status: row.status,
+    checkoutUrl: row.checkout_url,
+    providerOrderId: row.provider_order_id,
+    transactionId: row.transaction_id,
+    createdAt: row.created_at,
+  };
+}
+
+function positiveAmount(amountInr) {
+  const amount = Number(amountInr);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new LedgerError('amountInr must be greater than 0', {
+      status: 400,
+      code: 'INVALID_AMOUNT',
+    });
+  }
+  if (amount > 1000000) {
+    throw new LedgerError('amountInr must be at most 1000000', {
+      status: 400,
+      code: 'INVALID_AMOUNT',
+    });
+  }
+  return Math.round(amount * 100) / 100;
+}
+
 export function createLedger(supabase) {
-  async function getBalance() {
+  async function getWallet(ownerId) {
     const { data, error } = await supabase
       .from('wallets')
-      .select('id, balance_inr')
-      .order('created_at', { ascending: true })
-      .limit(1)
+      .select('*')
+      .eq('owner_id', ownerId)
       .maybeSingle();
 
     if (error) {
@@ -29,58 +69,313 @@ export function createLedger(supabase) {
       });
     }
     if (!data) {
-      throw new LedgerError('No wallet row exists. Run server/schema.sql.', {
-        status: 503,
+      throw new LedgerError('No wallet exists for this account', {
+        status: 404,
         code: 'WALLET_MISSING',
       });
     }
-
-    return { walletId: data.id, balanceInr: Number(data.balance_inr) };
+    return data;
   }
 
-  async function topUp(amountInr) {
-    const amount = Number(amountInr);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new LedgerError('amountInr must be greater than 0', {
-        status: 400,
-        code: 'INVALID_AMOUNT',
-      });
+  async function getBalance(ownerId) {
+    const wallet = await getWallet(ownerId);
+    return {
+      balanceInr: Number(wallet.balance_inr),
+      perTxLimitInr: Number(wallet.per_tx_limit_inr),
+      dailyLimitInr: Number(wallet.daily_limit_inr),
+      spentTodayInr: Number(wallet.spent_today_inr),
+      policyExpiry: wallet.policy_expiry,
+    };
+  }
+
+  async function getStatus(ownerId) {
+    const wallet = await getWallet(ownerId);
+    return mapWallet(wallet);
+  }
+
+  async function updatePolicy(ownerId, { perTxLimitInr, dailyLimitInr }) {
+    const patch = {};
+    if (perTxLimitInr != null) {
+      patch.per_tx_limit_inr = positiveAmount(perTxLimitInr);
     }
-    if (amount > 1000000) {
-      throw new LedgerError('amountInr must be at most 1000000', {
+    if (dailyLimitInr != null) {
+      patch.daily_limit_inr = positiveAmount(dailyLimitInr);
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new LedgerError('No policy limits supplied', {
         status: 400,
-        code: 'INVALID_AMOUNT',
+        code: 'INVALID_POLICY',
       });
     }
 
-    const { data, error } = await supabase.rpc('wallet_topup', {
-      p_amount: amount,
+    const perTx = patch.per_tx_limit_inr;
+    const daily = patch.daily_limit_inr;
+    if (perTx != null && daily != null && perTx > daily) {
+      throw new LedgerError(
+        'perTxLimitInr cannot be greater than dailyLimitInr',
+        { status: 400, code: 'INVALID_POLICY' },
+      );
+    }
+
+    const { data, error } = await supabase
+      .from('wallets')
+      .update(patch)
+      .eq('owner_id', ownerId)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'POLICY_WRITE_FAILED',
+      });
+    }
+    if (!data) {
+      throw new LedgerError('No wallet exists for this account', {
+        status: 404,
+        code: 'WALLET_MISSING',
+      });
+    }
+    return mapWallet(data);
+  }
+
+  async function renewPolicy(ownerId, hours = 24) {
+    const expiresAt = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('wallets')
+      .update({ policy_expiry: expiresAt })
+      .eq('owner_id', ownerId)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'POLICY_WRITE_FAILED',
+      });
+    }
+    if (!data) {
+      throw new LedgerError('No wallet exists for this account', {
+        status: 404,
+        code: 'WALLET_MISSING',
+      });
+    }
+    return mapWallet(data);
+  }
+
+  async function listTransactions(ownerId, limit = 20) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, merchant_name, merchant_vpa, amount_inr, status, tx_hash, created_at')
+      .eq('owner_id', ownerId)
+      .order('created_at', { ascending: false })
+      .limit(Math.min(Number(limit) || 20, 100));
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'TRANSACTIONS_READ_FAILED',
+      });
+    }
+    return (data ?? []).map((row) => ({
+      id: row.id,
+      merchantName: row.merchant_name,
+      merchantVpa: row.merchant_vpa,
+      amountInr: Number(row.amount_inr),
+      status: row.status,
+      txHash: row.tx_hash,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async function createTopUp(ownerId, amountInr) {
+    const amount = positiveAmount(amountInr);
+    const wallet = await getWallet(ownerId);
+
+    const { data, error } = await supabase
+      .from('topups')
+      .insert({
+        owner_id: ownerId,
+        wallet_id: wallet.id,
+        amount_inr: amount,
+        status: 'PENDING',
+        provider: 'razorpay',
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'TOPUP_CREATE_FAILED',
+      });
+    }
+    return mapTopUp(data);
+  }
+
+  async function attachCheckout(topUpId, { providerOrderId, checkoutUrl }) {
+    const { data, error } = await supabase
+      .from('topups')
+      .update({
+        provider_order_id: providerOrderId,
+        checkout_url: checkoutUrl,
+      })
+      .eq('id', topUpId)
+      .eq('status', 'PENDING')
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'TOPUP_UPDATE_FAILED',
+      });
+    }
+    if (!data) {
+      throw new LedgerError('Top-up is no longer pending', {
+        status: 409,
+        code: 'TOPUP_NOT_PENDING',
+      });
+    }
+    return mapTopUp(data);
+  }
+
+  async function getTopUp(ownerId, topUpId) {
+    const { data, error } = await supabase
+      .from('topups')
+      .select('*')
+      .eq('id', topUpId)
+      .eq('owner_id', ownerId)
+      .maybeSingle();
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'TOPUP_READ_FAILED',
+      });
+    }
+    if (!data) {
+      throw new LedgerError('Top-up not found', {
+        status: 404,
+        code: 'TOPUP_NOT_FOUND',
+      });
+    }
+    return mapTopUp(data);
+  }
+
+  async function findTopUpByOrderId(providerOrderId) {
+    const { data, error } = await supabase
+      .from('topups')
+      .select('*')
+      .eq('provider_order_id', providerOrderId)
+      .maybeSingle();
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'TOPUP_READ_FAILED',
+      });
+    }
+    if (!data) {
+      throw new LedgerError('No top-up matches this provider order', {
+        status: 404,
+        code: 'TOPUP_NOT_FOUND',
+      });
+    }
+    return mapTopUp(data);
+  }
+
+  async function creditTopUp(topUpId, paymentId) {
+    const { data, error } = await supabase.rpc('credit_topup', {
+      p_topup_id: topUpId,
+      p_payment_id: paymentId,
     });
 
     if (error) {
       throw new LedgerError(error.message, {
         status: 502,
-        code: error.code || 'TOPUP_FAILED',
+        code: error.code || 'TOPUP_CREDIT_FAILED',
       });
     }
 
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) {
-      throw new LedgerError('wallet_topup returned no row', {
+      throw new LedgerError('credit_topup returned no row', {
         status: 502,
-        code: 'TOPUP_EMPTY',
+        code: 'TOPUP_CREDIT_EMPTY',
       });
     }
-
     return {
       balanceInr: Number(row.new_balance),
       transactionId: row.transaction_id,
-      topupId: row.topup_id,
-      amountInr: amount,
+      status: row.topup_status,
     };
   }
 
-  return { getBalance, topUp };
+  async function markTopUp(topUpId, status) {
+    const { data, error } = await supabase
+      .from('topups')
+      .update({ status })
+      .eq('id', topUpId)
+      .eq('status', 'PENDING')
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: 502,
+        code: error.code || 'TOPUP_UPDATE_FAILED',
+      });
+    }
+    return data ? mapTopUp(data) : null;
+  }
+
+  async function debit(ownerId, { amountInr, merchantName, merchantVpa, status }) {
+    const amount = positiveAmount(amountInr);
+    const { data, error } = await supabase.rpc('debit_wallet', {
+      p_owner_id: ownerId,
+      p_amount: amount,
+      p_merchant: merchantName,
+      p_vpa: merchantVpa,
+      p_status: status,
+    });
+
+    if (error) {
+      throw new LedgerError(error.message, {
+        status: error.code === '22003' ? 409 : 502,
+        code: error.code || 'PAYMENT_FAILED',
+      });
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      throw new LedgerError('debit_wallet returned no row', {
+        status: 502,
+        code: 'PAYMENT_EMPTY',
+      });
+    }
+    return {
+      balanceInr: Number(row.new_balance),
+      transactionId: row.transaction_id,
+      spentTodayInr: Number(row.spent_today),
+    };
+  }
+
+  return {
+    getWallet,
+    getBalance,
+    getStatus,
+    updatePolicy,
+    renewPolicy,
+    listTransactions,
+    createTopUp,
+    attachCheckout,
+    getTopUp,
+    findTopUpByOrderId,
+    creditTopUp,
+    markTopUp,
+    debit,
+  };
 }
 
 export function sendLedgerError(res, error) {

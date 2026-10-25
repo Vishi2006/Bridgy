@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../state/policy_controller.dart';
 import '../unipay.dart';
 import 'agent_chat_screen.dart';
 import 'home_screen.dart';
@@ -19,6 +20,12 @@ class AppShellState extends State<AppShell> {
   String? _goal;
   int _goalTick = 0;
   bool _fabDown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    PolicyController.instance.load();
+  }
 
   void openAgent(String goal) {
     setState(() {

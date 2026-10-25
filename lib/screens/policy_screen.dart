@@ -100,10 +100,18 @@ class _PolicyScreenState extends State<PolicyScreen> {
         const Spacer(),
         InkResponse(
           onTap: () async {
-            await _controller.save();
+            try {
+              await _controller.save();
+            } on Exception {
+              // The controller stores the exact backend message; show it.
+            }
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Policy ${_controller.syncStatus}')),
+              SnackBar(
+                content: Text(
+                  _controller.error ?? 'Policy ${_controller.syncStatus}',
+                ),
+              ),
             );
           },
           radius: 24,
@@ -359,8 +367,8 @@ class _PolicyScreenState extends State<PolicyScreen> {
                   SnackBar(
                     content: Text(
                       ok
-                          ? 'Session renewed for 24 hours on Base Sepolia'
-                          : 'Session renewed locally',
+                          ? 'Policy window renewed for 24 hours'
+                          : (_controller.error ?? 'Session renewal failed'),
                     ),
                   ),
                 );
@@ -413,11 +421,19 @@ class _PolicyScreenState extends State<PolicyScreen> {
         ),
         const SizedBox(height: 10),
         Text(
-          'Policies are enforced cryptographically on Base Sepolia by ZeroDev '
-          'Kernel v0.3.1. When an agent action exceeds the ₹${_controller.perTxLimitInr.round()} '
-          'per-tx limit, it automatically escalates to your biometric approval.',
+          'Policies are enforced by the Bridgy backend on every payment. When '
+          'an agent action exceeds the ₹${_controller.perTxLimitInr.round()} '
+          'per-tx limit, it escalates to owner approval.',
           style: uiStyle(size: 11.5, color: AppColors.muted, height: 1.45),
         ),
+        if (_controller.error != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            _controller.error!,
+            key: const Key('policy-error'),
+            style: uiStyle(size: 11, color: AppColors.negative, height: 1.4),
+          ),
+        ],
       ],
     );
   }

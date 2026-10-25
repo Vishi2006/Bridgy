@@ -1,14 +1,12 @@
 import 'package:flutter/foundation.dart';
 
-import '../services/backend.dart';
 import '../services/policy.dart';
 import '../services/wallet_service.dart';
 
-/// Holds the spending policy shown in the UI and mirrored to the Express backend
-/// and Supabase's `wallets` row when configured.
+/// Holds the spending policy shown in the UI.
 ///
-/// This is the display-side copy. The authoritative limits live in the
-/// ERC-4337 ZeroDev Kernel session key on Base Sepolia.
+/// The backend ledger is the only source. There is no local policy fallback:
+/// a failed read or write stores the exact error and the UI shows it.
 class PolicyController extends ChangeNotifier {
   PolicyController();
 
@@ -17,14 +15,13 @@ class PolicyController extends ChangeNotifier {
   double perTxLimitInr = 200;
   double dailyLimitInr = 500;
   double spentTodayInr = 0;
-  DateTime expiresAt = DateTime.now().add(const Duration(hours: 24));
+  DateTime expiresAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  String smartWalletAddress = '0x88F7c64a8523A9C830Da4c1F3235b62b66eCe4eA';
-  String agentSessionAddress = '0x...';
+  String smartWalletAddress = 'pending';
   bool isSmartAccountLive = false;
 
-  String syncStatus = 'local only';
-  Object? _rowId;
+  String syncStatus = 'not loaded';
+  String? error;
 
   WalletPolicy get policy => WalletPolicy(
     perTxLimitInr: perTxLimitInr,
@@ -37,104 +34,47 @@ class PolicyController extends ChangeNotifier {
       policy.evaluate(amountInr, now: DateTime.now());
 
   Future<void> load() async {
-    // 1. Fetch live status from Express Backend
     try {
-      final backendStatus = await WalletService.getStatus();
-      if (backendStatus != null) {
-        smartWalletAddress =
-            backendStatus['smartAccountAddress'] as String? ?? smartWalletAddress;
-        agentSessionAddress =
-            backendStatus['agentSessionAddress'] as String? ?? agentSessionAddress;
-        isSmartAccountLive = backendStatus['isLive'] == true;
-
-        final policyData = backendStatus['policy'] as Map<String, dynamic>?;
-        if (policyData != null) {
-          perTxLimitInr = _toDouble(policyData['perTxLimitInr'], perTxLimitInr);
-          dailyLimitInr = _toDouble(policyData['dailyLimitInr'], dailyLimitInr);
-          spentTodayInr = _toDouble(policyData['spentTodayInr'], spentTodayInr);
-          final untilSec = policyData['validUntilTimestamp'];
-          if (untilSec is num) {
-            expiresAt = DateTime.fromMillisecondsSinceEpoch(
-              (untilSec * 1000).toInt(),
-            );
-          }
-        }
-        syncStatus = 'synced (backend)';
-      }
-    } catch (e) {
-      debugPrint('[PolicyController] Backend sync note: $e');
+      final status = await WalletService.getStatus();
+      _apply(status);
+      syncStatus = 'synced (backend)';
+      error = null;
+    } on Exception catch (failure) {
+      syncStatus = 'backend unavailable';
+      error = failure.toString();
     }
-
-    // 2. Fetch from Supabase if configured
-    final client = BridgyBackend.client;
-    if (client != null) {
-      try {
-        final rows = await client
-            .from('wallets')
-            .select()
-            .order('id')
-            .limit(1);
-        if (rows.isNotEmpty) {
-          final row = rows.first;
-          _rowId = row['id'];
-          perTxLimitInr = _toDouble(row['per_tx_limit_inr'], perTxLimitInr);
-          dailyLimitInr = _toDouble(row['daily_limit_inr'], dailyLimitInr);
-          spentTodayInr = _toDouble(row['spent_today_inr'], spentTodayInr);
-          final expiry = DateTime.tryParse('${row['policy_expiry']}');
-          if (expiry != null) expiresAt = expiry.toLocal();
-          syncStatus = 'synced (cloud)';
-        }
-      } catch (e) {
-        debugPrint('[PolicyController] Supabase load skipped: $e');
-      }
-    }
-
     notifyListeners();
   }
 
   Future<void> save() async {
-    // Backend is the authoritative policy store for the running agent.
-    final backendSaved = await WalletService.updatePolicy(
-      perTxLimitInr: perTxLimitInr,
-      dailyLimitInr: dailyLimitInr,
-    );
-    syncStatus = backendSaved ? 'saved (backend)' : 'backend unavailable';
-
-    // Supabase is a best-effort mirror. A missing table or RLS failure must not
-    // hide the fact that the backend already accepted the policy.
-    final client = BridgyBackend.client;
-    if (client != null) {
-      final payload = {
-        'per_tx_limit_inr': perTxLimitInr,
-        'daily_limit_inr': dailyLimitInr,
-        'spent_today_inr': spentTodayInr,
-        'policy_expiry': expiresAt.toUtc().toIso8601String(),
-      };
-      try {
-        if (_rowId != null) {
-          await client.from('wallets').update(payload).eq('id', _rowId!);
-        } else {
-          final inserted = await client
-              .from('wallets')
-              .insert({'smart_wallet_address': smartWalletAddress, ...payload})
-              .select('id')
-              .single();
-          _rowId = inserted['id'];
-        }
-        syncStatus = 'saved';
-      } catch (e) {
-        debugPrint('[PolicyController] Supabase mirror skipped: $e');
-      }
+    try {
+      final status = await WalletService.updatePolicy(
+        perTxLimitInr: perTxLimitInr,
+        dailyLimitInr: dailyLimitInr,
+      );
+      _apply(status);
+      syncStatus = 'saved (backend)';
+      error = null;
+      notifyListeners();
+    } on Exception catch (failure) {
+      syncStatus = 'save failed';
+      error = failure.toString();
+      notifyListeners();
+      rethrow;
     }
-
-    notifyListeners();
   }
 
   Future<bool> renewSession() async {
-    final ok = await WalletService.renewSession();
-    expiresAt = DateTime.now().add(const Duration(hours: 24));
-    notifyListeners();
-    return ok;
+    try {
+      await WalletService.renewSession();
+      await load();
+      return true;
+    } on Exception catch (failure) {
+      syncStatus = 'renew failed';
+      error = failure.toString();
+      notifyListeners();
+      return false;
+    }
   }
 
   void setPerTxLimit(double value) {
@@ -152,6 +92,12 @@ class PolicyController extends ChangeNotifier {
     notifyListeners();
   }
 
-  static double _toDouble(Object? value, double fallback) =>
-      value is num ? value.toDouble() : fallback;
+  void _apply(WalletStatus status) {
+    perTxLimitInr = status.perTxLimitInr;
+    dailyLimitInr = status.dailyLimitInr;
+    spentTodayInr = status.spentTodayInr;
+    expiresAt = status.policyExpiry;
+    smartWalletAddress = status.smartAccountAddress;
+    isSmartAccountLive = status.isLive;
+  }
 }

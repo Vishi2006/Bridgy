@@ -5,14 +5,24 @@ import '../services/policy.dart';
 import '../services/upi.dart';
 import '../services/wallet_service.dart';
 import '../state/policy_controller.dart';
+import '../state/wallet_store.dart';
 import '../theme.dart';
 
 /// Entry point for `upi://pay` checkouts. Applies the ZeroDev spending policy and
 /// escalates to owner biometric approval when the amount exceeds the session key limit.
-class UpiCheckoutScreen extends StatelessWidget {
+class UpiCheckoutScreen extends StatefulWidget {
   const UpiCheckoutScreen({super.key, required this.link});
 
   final String link;
+
+  @override
+  State<UpiCheckoutScreen> createState() => _UpiCheckoutScreenState();
+}
+
+class _UpiCheckoutScreenState extends State<UpiCheckoutScreen> {
+  bool _busy = false;
+
+  String get link => widget.link;
 
   @override
   Widget build(BuildContext context) {
@@ -37,18 +47,30 @@ class UpiCheckoutScreen extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text('Pay with Bridgy', style: displayStyle(size: 26, spacing: -1)),
+              Text(
+                'Pay with Bridgy',
+                style: displayStyle(size: 26, spacing: -1),
+              ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.gold.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: AppColors.gold.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: Text(
                   'ERC-4337',
-                  style: uiStyle(size: 11, weight: FontWeight.w700, color: AppColors.goldText),
+                  style: uiStyle(
+                    size: 11,
+                    weight: FontWeight.w700,
+                    color: AppColors.goldText,
+                  ),
                 ),
               ),
             ],
@@ -76,10 +98,10 @@ class UpiCheckoutScreen extends StatelessWidget {
           InkWell(
             onTap: decision == PolicyDecision.reject
                 ? () => _showBlockedDialog(
-                      context,
-                      amountInr: intent.amountInr,
-                      remainingInr: controller.policy.remainingTodayInr,
-                    )
+                    context,
+                    amountInr: intent.amountInr,
+                    remainingInr: controller.policy.remainingTodayInr,
+                  )
                 : null,
             borderRadius: BorderRadius.circular(22),
             child: _decisionCard(decision, intent.amountInr, controller),
@@ -135,15 +157,30 @@ class UpiCheckoutScreen extends StatelessWidget {
               ),
               const Spacer(),
               if (decision == PolicyDecision.allow)
-                const AppIcon(Icons8.shieldCheck, size: 16, color: AppColors.gold)
+                const AppIcon(
+                  Icons8.shieldCheck,
+                  size: 16,
+                  color: AppColors.gold,
+                )
               else if (decision == PolicyDecision.ownerApproval)
-                const AppIcon(Icons8.fingerprint, size: 16, color: AppColors.goldDeep)
+                const AppIcon(
+                  Icons8.fingerprint,
+                  size: 16,
+                  color: AppColors.goldDeep,
+                )
               else
-                const AppIcon(Icons8.alert, size: 16, color: AppColors.negative),
+                const AppIcon(
+                  Icons8.alert,
+                  size: 16,
+                  color: AppColors.negative,
+                ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(detail, style: uiStyle(size: 12, color: AppColors.muted, height: 1.5)),
+          Text(
+            detail,
+            style: uiStyle(size: 12, color: AppColors.muted, height: 1.5),
+          ),
           const SizedBox(height: 10),
           Text(
             'per-tx ₹${controller.perTxLimitInr.round()} · '
@@ -162,8 +199,10 @@ class UpiCheckoutScreen extends StatelessWidget {
     UpiIntent intent,
     PolicyController controller,
   ) {
-    final enabled = decision != PolicyDecision.reject;
-    final label = decision == PolicyDecision.ownerApproval
+    final enabled = decision != PolicyDecision.reject && !_busy;
+    final label = _busy
+        ? 'Paying…'
+        : decision == PolicyDecision.ownerApproval
         ? 'Approve as owner'
         : 'Pay ₹${intent.amountInr.toStringAsFixed(0)}';
 
@@ -175,7 +214,9 @@ class UpiCheckoutScreen extends StatelessWidget {
                   context: context,
                   backgroundColor: AppColors.card,
                   shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(26),
+                    ),
                   ),
                   builder: (_) => OwnerApprovalSheet(
                     amountInr: intent.amountInr,
@@ -187,10 +228,10 @@ class UpiCheckoutScreen extends StatelessWidget {
               _submit(context, decision, intent, controller);
             }
           : () => _showBlockedDialog(
-                context,
-                amountInr: intent.amountInr,
-                remainingInr: controller.policy.remainingTodayInr,
-              ),
+              context,
+              amountInr: intent.amountInr,
+              remainingInr: controller.policy.remainingTodayInr,
+            ),
       radius: 30,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -213,57 +254,89 @@ class UpiCheckoutScreen extends StatelessWidget {
     );
   }
 
-  void _submit(
+  Future<void> _submit(
     BuildContext context,
     PolicyDecision decision,
     UpiIntent intent,
     PolicyController controller,
-  ) {
-    final authType = decision == PolicyDecision.ownerApproval ? 'OWNER_PAID' : 'AGENT_PAID';
-    final message = decision == PolicyDecision.ownerApproval
-        ? 'Approved with owner key. Nothing was charged.'
-        : 'Paid ₹${intent.amountInr.toStringAsFixed(0)} via session key. Nothing was charged.';
+  ) async {
+    if (_busy) return;
+    setState(() => _busy = true);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    final authType = decision == PolicyDecision.ownerApproval
+        ? 'OWNER_PAID'
+        : 'AGENT_PAID';
 
-    // Asynchronously dispatch on-chain UserOp to backend
-    if (decision == PolicyDecision.ownerApproval) {
-      WalletService.payWithOwner(
+    try {
+      final result = decision == PolicyDecision.ownerApproval
+          ? await WalletService.payWithOwner(
+              amountInr: intent.amountInr,
+              merchantName: intent.merchantName,
+              merchantVpa: intent.merchantVpa,
+            )
+          : await WalletService.payWithAgent(
+              amountInr: intent.amountInr,
+              merchantName: intent.merchantName,
+              merchantVpa: intent.merchantVpa,
+            );
+      await controller.load();
+      await WalletStore.instance.refresh();
+      if (!mounted) return;
+      _showSuccessDialog(
+        context,
+        merchant: intent.merchantName,
         amountInr: intent.amountInr,
-        merchantName: intent.merchantName,
-        merchantVpa: intent.merchantVpa,
-      ).then((res) {
-        controller.load();
-        if (context.mounted && res.success) {
-          _showSuccessDialog(
-            context,
-            merchant: intent.merchantName,
-            amountInr: intent.amountInr,
-            authType: authType,
-            txHash: res.txHash,
-          );
-        }
-      }).catchError((_) {});
-    } else {
-      WalletService.payWithAgent(
-        amountInr: intent.amountInr,
-        merchantName: intent.merchantName,
-        merchantVpa: intent.merchantVpa,
-      ).then((res) {
-        controller.load();
-        if (context.mounted && res.success) {
-          _showSuccessDialog(
-            context,
-            merchant: intent.merchantName,
-            amountInr: intent.amountInr,
-            authType: authType,
-            txHash: res.txHash,
-          );
-        }
-      }).catchError((_) {});
+        authType: authType,
+        txHash: result.txHash,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showErrorDialog(context, error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _showErrorDialog(BuildContext context, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const AppIcon(
+                  Icons8.alert,
+                  size: 20,
+                  color: AppColors.negative,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Payment failed',
+                  style: displayStyle(size: 20, spacing: -0.4),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              key: const Key('upi-payment-error'),
+              style: uiStyle(size: 12, color: AppColors.negative, height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Close', style: uiStyle(size: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showSuccessDialog(
@@ -275,7 +348,7 @@ class UpiCheckoutScreen extends StatelessWidget {
   }) {
     final truncatedHash = txHash != null && txHash.length > 14
         ? '${txHash.substring(0, 8)}...${txHash.substring(txHash.length - 6)}'
-        : (txHash ?? '0x3a4f...mock');
+        : (txHash ?? 'ledger entry');
 
     showDialog<void>(
       context: context,
@@ -295,7 +368,11 @@ class UpiCheckoutScreen extends StatelessWidget {
                 border: Border.all(color: const Color(0xFF86EFAC)),
               ),
               child: const Center(
-                child: AppIcon(Icons8.check, size: 28, color: Color(0xFF15803D)),
+                child: AppIcon(
+                  Icons8.check,
+                  size: 28,
+                  color: Color(0xFF15803D),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -306,7 +383,11 @@ class UpiCheckoutScreen extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '₹${amountInr.toStringAsFixed(2)} to $merchant',
-              style: uiStyle(size: 14, weight: FontWeight.w700, color: AppColors.ink),
+              style: uiStyle(
+                size: 14,
+                weight: FontWeight.w700,
+                color: AppColors.ink,
+              ),
             ),
             const SizedBox(height: 16),
             Container(
@@ -321,24 +402,49 @@ class UpiCheckoutScreen extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Settlement Rail:', style: uiStyle(size: 11.5, color: AppColors.muted)),
-                      Text('Bridgy UPI Vault (INR)', style: uiStyle(size: 11.5, weight: FontWeight.w700)),
+                      Text(
+                        'Settlement Rail:',
+                        style: uiStyle(size: 11.5, color: AppColors.muted),
+                      ),
+                      Text(
+                        'Bridgy UPI Vault (INR)',
+                        style: uiStyle(size: 11.5, weight: FontWeight.w700),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Security Policy:', style: uiStyle(size: 11.5, color: AppColors.muted)),
-                      Text(authType, style: uiStyle(size: 11.5, weight: FontWeight.w700, color: AppColors.goldText)),
+                      Text(
+                        'Security Policy:',
+                        style: uiStyle(size: 11.5, color: AppColors.muted),
+                      ),
+                      Text(
+                        authType,
+                        style: uiStyle(
+                          size: 11.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.goldText,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Base Sepolia Hash:', style: uiStyle(size: 11.5, color: AppColors.muted)),
-                      Text(truncatedHash, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                      Text(
+                        'Ledger reference:',
+                        style: uiStyle(size: 11.5, color: AppColors.muted),
+                      ),
+                      Text(
+                        truncatedHash,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -358,7 +464,11 @@ class UpiCheckoutScreen extends StatelessWidget {
                 child: Center(
                   child: Text(
                     'Return to App',
-                    style: uiStyle(size: 13, weight: FontWeight.w700, color: AppColors.card),
+                    style: uiStyle(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.card,
+                    ),
                   ),
                 ),
               ),
@@ -392,7 +502,11 @@ class UpiCheckoutScreen extends StatelessWidget {
                 border: Border.all(color: const Color(0xFFFCA5A5)),
               ),
               child: const Center(
-                child: AppIcon(Icons8.alert, size: 28, color: Color(0xFFDC2626)),
+                child: AppIcon(
+                  Icons8.alert,
+                  size: 28,
+                  color: Color(0xFFDC2626),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -403,7 +517,11 @@ class UpiCheckoutScreen extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               'Insufficient Daily Budget / Low Fund',
-              style: uiStyle(size: 13, weight: FontWeight.w700, color: AppColors.negative),
+              style: uiStyle(
+                size: 13,
+                weight: FontWeight.w700,
+                color: AppColors.negative,
+              ),
             ),
             const SizedBox(height: 14),
             Container(
@@ -424,7 +542,11 @@ class UpiCheckoutScreen extends StatelessWidget {
                   Text(
                     'The ZeroDev smart contract guardrail reverted this transaction. '
                     'The autonomous AI agent is mathematically prevented from spending more than your configured daily limit.',
-                    style: uiStyle(size: 11.5, color: AppColors.muted, height: 1.45),
+                    style: uiStyle(
+                      size: 11.5,
+                      color: AppColors.muted,
+                      height: 1.45,
+                    ),
                   ),
                 ],
               ),
@@ -443,7 +565,11 @@ class UpiCheckoutScreen extends StatelessWidget {
                 child: Center(
                   child: Text(
                     'Dismiss & Keep Safe',
-                    style: uiStyle(size: 13, weight: FontWeight.w700, color: AppColors.card),
+                    style: uiStyle(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.card,
+                    ),
                   ),
                 ),
               ),
@@ -488,9 +614,16 @@ class OwnerApprovalSheet extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text('Owner approval', style: displayStyle(size: 22, spacing: -0.6)),
+              Text(
+                'Owner approval',
+                style: displayStyle(size: 22, spacing: -0.6),
+              ),
               const Spacer(),
-              const AppIcon(Icons8.fingerprint, size: 20, color: AppColors.gold),
+              const AppIcon(
+                Icons8.fingerprint,
+                size: 20,
+                color: AppColors.gold,
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -513,7 +646,11 @@ class OwnerApprovalSheet extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const AppIcon(Icons8.fingerprint, size: 18, color: AppColors.ink),
+                    const AppIcon(
+                      Icons8.fingerprint,
+                      size: 18,
+                      color: AppColors.ink,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Approve with owner key',

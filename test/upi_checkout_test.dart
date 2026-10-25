@@ -79,7 +79,10 @@ void main() {
 
     await tester.tap(find.text('Approve with owner key'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Nothing was charged'), findsOneWidget);
+    // No session in tests: the real API rejects, and the screen must show it
+    // instead of a fake success.
+    expect(find.byKey(const Key('upi-payment-error')), findsOneWidget);
+    expect(find.textContaining('Sign in required'), findsOneWidget);
   });
 
   testWidgets('blocks an amount above the daily budget', (tester) async {

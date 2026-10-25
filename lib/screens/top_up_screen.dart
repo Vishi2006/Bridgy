@@ -1,19 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../icons.dart';
 import '../services/wallet_service.dart';
 import '../state/wallet_store.dart';
 import '../theme.dart';
 
-/// Top-up sheet for the Bridgy ledger.
+/// Real UPI top-up through a Razorpay payment link.
 ///
-/// Every tap calls the backend and applies the balance it returns. There is no
-/// local credit path: a failure stays on screen with the exact backend message.
+/// The customer enters their UPI ID and PIN inside Razorpay or their UPI app.
+/// Bridgy only polls the backend, which verifies the payment with Razorpay
+/// before crediting the ledger. A failure stays on screen verbatim.
 class TopUpScreen extends StatefulWidget {
-  const TopUpScreen({super.key, this.onSubmit});
+  const TopUpScreen({
+    super.key,
+    this.createOrder,
+    this.fetchOrder,
+    this.launchPayment,
+  });
 
-  /// Test seam only. Production calls [WalletService.topUp].
-  final Future<TopUpResult> Function(double amountInr)? onSubmit;
+  /// Test seams. Production uses [WalletService] and [launchUrl].
+  final Future<TopUpOrder> Function(double amountInr)? createOrder;
+  final Future<TopUpOrder> Function(String id)? fetchOrder;
+  final Future<bool> Function(Uri uri)? launchPayment;
 
   @override
   State<TopUpScreen> createState() => _TopUpScreenState();
@@ -21,16 +32,34 @@ class TopUpScreen extends StatefulWidget {
 
 class _TopUpScreenState extends State<TopUpScreen> {
   static const _presets = [100.0, 500.0, 1000.0, 2000.0];
+  static const _pollInterval = Duration(seconds: 2);
+  static const _maxPolls = 300;
 
   final _amount = TextEditingController(text: '500');
+
   bool _busy = false;
+  bool _polling = false;
+  bool _fetching = false;
   String? _error;
-  TopUpResult? _result;
+  TopUpOrder? _order;
+  Timer? _pollTimer;
+  int _polls = 0;
+
+  Future<TopUpOrder> _create(double amount) =>
+      (widget.createOrder ?? WalletService.createTopUp)(amount);
+
+  Future<TopUpOrder> _fetch(String id) =>
+      (widget.fetchOrder ?? WalletService.getTopUp)(id);
+
+  Future<bool> _launch(Uri uri) => widget.launchPayment != null
+      ? widget.launchPayment!(uri)
+      : launchUrl(uri, mode: LaunchMode.externalApplication);
 
   double? get _parsedAmount => double.tryParse(_amount.text.trim());
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _amount.dispose();
     super.dispose();
   }
@@ -39,12 +68,12 @@ class _TopUpScreenState extends State<TopUpScreen> {
     setState(() {
       _amount.text = value.toStringAsFixed(0);
       _error = null;
-      _result = null;
+      _order = null;
     });
   }
 
   Future<void> _submit() async {
-    if (_busy) return;
+    if (_busy || _polling) return;
 
     final amount = _parsedAmount;
     if (amount == null || amount <= 0) {
@@ -55,28 +84,109 @@ class _TopUpScreenState extends State<TopUpScreen> {
     setState(() {
       _busy = true;
       _error = null;
-      _result = null;
+      _order = null;
     });
 
     try {
-      final submit = widget.onSubmit ?? WalletService.topUp;
-      final result = await submit(amount);
-      await WalletStore.instance.applyTopUp(
-        amountInr: result.amountInr,
-        balanceInr: result.balanceInr,
-      );
+      final order = await _create(amount);
+      final checkoutUrl = order.checkoutUrl;
+      if (checkoutUrl == null || checkoutUrl.isEmpty) {
+        throw const WalletApiException(
+          'Backend returned no checkout URL.',
+          code: 'NO_CHECKOUT_URL',
+        );
+      }
+      final opened = await _launch(Uri.parse(checkoutUrl));
+      if (!opened) {
+        throw const WalletApiException(
+          'Could not open the payment page. Install a browser or UPI app.',
+          code: 'LAUNCH_FAILED',
+        );
+      }
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _result = result;
+        _order = order;
+        _polling = true;
+        _polls = 0;
       });
-    } catch (error) {
+      _startPolling(order.id);
+    } catch (failure) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = error.toString();
+        _error = failure.toString();
       });
     }
+  }
+
+  void _startPolling(String id) {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _poll(id));
+  }
+
+  Future<void> _poll(String id) async {
+    if (_fetching) return;
+    _fetching = true;
+    _polls++;
+
+    if (_polls > _maxPolls) {
+      _stopPolling();
+      setState(() {
+        _error =
+            'Payment not confirmed after 10 minutes. '
+            'Open the payment page again if you have not paid.';
+      });
+      _fetching = false;
+      return;
+    }
+
+    try {
+      final order = await _fetch(id);
+      if (!mounted) return;
+
+      if (order.isPaid) {
+        final balance = order.balanceInr;
+        if (balance == null) {
+          _stopPolling();
+          setState(() {
+            _error = 'Paid top-up returned no balance.';
+            _polling = false;
+          });
+          return;
+        }
+        await WalletStore.instance.applyTopUp(
+          amountInr: order.amountInr,
+          balanceInr: balance,
+        );
+        if (!mounted) return;
+        _stopPolling();
+        setState(() {
+          _polling = false;
+          _order = order;
+        });
+      } else if (order.status == 'FAILED' || order.status == 'EXPIRED') {
+        _stopPolling();
+        setState(() {
+          _polling = false;
+          _error = 'Payment ${order.status.toLowerCase()}. No money was added.';
+        });
+      }
+    } catch (failure) {
+      if (!mounted) return;
+      _stopPolling();
+      setState(() {
+        _polling = false;
+        _error = failure.toString();
+      });
+    } finally {
+      _fetching = false;
+    }
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
   @override
@@ -100,13 +210,13 @@ class _TopUpScreenState extends State<TopUpScreen> {
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: _presets.map((value) => _preset(value)).toList(),
+                children: _presets.map(_preset).toList(),
               ),
               const SizedBox(height: 18),
               TextField(
                 key: const Key('topup-amount'),
                 controller: _amount,
-                enabled: !_busy,
+                enabled: !_busy && !_polling,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
@@ -127,11 +237,8 @@ class _TopUpScreenState extends State<TopUpScreen> {
                   ),
                 ),
                 onChanged: (_) {
-                  if (_error != null || _result != null) {
-                    setState(() {
-                      _error = null;
-                      _result = null;
-                    });
+                  if (_error != null) {
+                    setState(() => _error = null);
                   }
                 },
               ),
@@ -139,16 +246,18 @@ class _TopUpScreenState extends State<TopUpScreen> {
                 const SizedBox(height: 14),
                 _errorBox(_error!),
               ],
-              if (_result != null) ...[
+              if (_polling) ...[const SizedBox(height: 14), _waitingBox()],
+              if (_order != null && _order!.isPaid) ...[
                 const SizedBox(height: 14),
-                _successBox(_result!),
+                _successBox(_order!),
               ],
               const SizedBox(height: 22),
               _submitButton(),
               const SizedBox(height: 12),
               Text(
-                'Demo ledger. This credits the shared Bridgy wallet through the '
-                'backend; it does not move bank money.',
+                'You enter your UPI ID and UPI PIN inside Razorpay or your UPI '
+                'app. Bridgy never sees the PIN. The wallet is credited only '
+                'after Razorpay confirms the payment.',
                 textAlign: TextAlign.center,
                 style: uiStyle(size: 11, color: AppColors.muted, height: 1.5),
               ),
@@ -185,7 +294,7 @@ class _TopUpScreenState extends State<TopUpScreen> {
           children: [
             Text('Top up', style: displayStyle(size: 22, spacing: -0.6)),
             Text(
-              'balance is stored in the backend',
+              'UPI via Razorpay',
               style: uiStyle(size: 11, color: AppColors.muted),
             ),
           ],
@@ -249,7 +358,7 @@ class _TopUpScreenState extends State<TopUpScreen> {
     final selected = _parsedAmount == value;
     return InkWell(
       key: Key('topup-preset-${value.toStringAsFixed(0)}'),
-      onTap: _busy ? null : () => _pick(value),
+      onTap: _busy || _polling ? null : () => _pick(value),
       borderRadius: BorderRadius.circular(999),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -268,6 +377,42 @@ class _TopUpScreenState extends State<TopUpScreen> {
             color: selected ? AppColors.card : AppColors.ink,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _waitingBox() {
+    return Container(
+      key: const Key('topup-waiting'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.goldSoft,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.goldDeep),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Waiting for Razorpay to confirm the payment…',
+              style: uiStyle(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.goldText,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -297,7 +442,7 @@ class _TopUpScreenState extends State<TopUpScreen> {
     );
   }
 
-  Widget _successBox(TopUpResult result) {
+  Widget _successBox(TopUpOrder order) {
     return Container(
       key: const Key('topup-success'),
       padding: const EdgeInsets.all(14),
@@ -312,8 +457,8 @@ class _TopUpScreenState extends State<TopUpScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Added ₹${result.amountInr.toStringAsFixed(2)}. '
-              'New balance ₹${result.balanceInr.toStringAsFixed(2)}.',
+              'Added ₹${order.amountInr.toStringAsFixed(2)}. '
+              'New balance ₹${(order.balanceInr ?? 0).toStringAsFixed(2)}.',
               style: uiStyle(
                 size: 12,
                 weight: FontWeight.w600,
@@ -330,19 +475,21 @@ class _TopUpScreenState extends State<TopUpScreen> {
   Widget _submitButton() {
     final amount = _parsedAmount ?? 0;
     final label = _busy
-        ? 'Adding ₹${amount.toStringAsFixed(0)}…'
-        : 'Top up ₹${amount.toStringAsFixed(0)}';
+        ? 'Opening UPI…'
+        : _polling
+        ? 'Waiting for payment…'
+        : 'Top up ₹${amount.toStringAsFixed(0)} with UPI';
 
     return InkResponse(
       key: const Key('topup-submit'),
-      onTap: _busy ? null : _submit,
+      onTap: _busy || _polling ? null : _submit,
       radius: 28,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: _busy ? AppColors.pill : AppColors.dark,
+          color: _busy || _polling ? AppColors.pill : AppColors.dark,
           borderRadius: BorderRadius.circular(999),
-          boxShadow: _busy ? null : AppShadows.pill,
+          boxShadow: _busy || _polling ? null : AppShadows.pill,
         ),
         child: Center(
           child: Text(
@@ -350,7 +497,7 @@ class _TopUpScreenState extends State<TopUpScreen> {
             style: uiStyle(
               size: 14,
               weight: FontWeight.w700,
-              color: _busy ? AppColors.muted : AppColors.card,
+              color: _busy || _polling ? AppColors.muted : AppColors.card,
             ),
           ),
         ),
