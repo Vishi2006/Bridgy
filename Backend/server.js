@@ -323,49 +323,42 @@ app.post(['/v1/chat/completions', '/api/chat/completions', '/chat/completions'],
 });
 
 // ── Email Verification / Auth Redirect Callback ─────────────────────────────
-app.get('/auth/callback', async (req, res) => {
-  const { code, token_hash, type, error, error_description } = req.query;
-
-  if (error) {
-    console.error('Auth verification error:', error, error_description);
-    return res.status(400).send(`
-      <html>
-        <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #F6F3EC; color: #171513;">
-          <h2>Verification Failed</h2>
-          <p>${error_description || error}</p>
-          <a href="${appRedirectUrl}" style="display: inline-block; padding: 12px 24px; background: #141312; color: white; border-radius: 99px; text-decoration: none;">Return to Bridgy</a>
-        </body>
-      </html>
-    `);
-  }
-
-  try {
-    if (code) {
-      await supabase.auth.exchangeCodeForSession(String(code));
-    } else if (token_hash && type) {
-      await supabase.auth.verifyOtp({
-        token_hash: String(token_hash),
-        type: String(type),
-      });
-    }
-
-    console.log(`Email verified! Redirecting user to ${appRedirectUrl}`);
-    return res.redirect(appRedirectUrl);
-  } catch (err) {
-    console.error('Error during callback redirect:', err);
-    return res.send(`
-      <html>
-        <head>
-          <meta http-equiv="refresh" content="2;url=${appRedirectUrl}">
-        </head>
-        <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #F6F3EC; color: #171513;">
-          <h2>Email Verified!</h2>
-          <p>Redirecting back to Bridgy...</p>
-          <a href="${appRedirectUrl}" style="display: inline-block; margin-top: 16px; padding: 12px 24px; background: #141312; color: white; border-radius: 99px; text-decoration: none;">Open Bridgy App</a>
-        </body>
-      </html>
-    `);
-  }
+app.get('/auth/callback', (req, res) => {
+  // Do not exchange the code here: the PKCE verifier and the session belong
+  // to the app. This page forwards both the query and the fragment to the
+  // custom scheme. The visible link is a fallback for in-app browsers that
+  // block an automatic custom-scheme navigation.
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bridgy sign-in</title>
+  <style>
+    body { background:#F6F3EC; color:#171513; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; margin:0; padding:24px; }
+    .card { background:#fff; border:1px solid #E7E1D4; border-radius:28px; padding:32px 24px; max-width:420px; width:100%; text-align:center; }
+    h1 { font-size:24px; margin:0 0 8px; }
+    p { color:#8A8578; font-size:14px; line-height:1.5; margin:0 0 22px; }
+    a { display:block; background:#141312; color:#fff; text-decoration:none; padding:14px 20px; border-radius:999px; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Continue to Bridgy</h1>
+    <p>Your email is confirmed. Tap the button to return to the app.</p>
+    <a id="open" href="bridgy://login-callback">Open Bridgy</a>
+  </div>
+  <script>
+    (function () {
+      var target = 'bridgy://login-callback' + location.search + location.hash;
+      var link = document.getElementById('open');
+      link.href = target;
+      location.replace(target);
+    })();
+  </script>
+</body>
+</html>`);
 });
 
 // ── User Sign Up ─────────────────────────────────────────────────────────────
@@ -492,19 +485,21 @@ app.get('/api/wallet/onchain', auth, async (_req, res) => {
         code: 'ONCHAIN_KEY_NOT_CONFIGURED',
       });
     }
-    const address = ownerAccount.address;
+    const smartAccountAddress = walletState.isLive
+      ? walletState.smartAccountAddress
+      : null;
+    const address = smartAccountAddress || ownerAccount.address;
     const wei = await publicClient.getBalance({ address });
     return res.json({
       address,
-      kind: 'owner-eoa',
+      ownerAddress: ownerAccount.address,
+      smartAccountAddress,
+      kind: smartAccountAddress ? 'kernel-smart-account' : 'owner-eoa',
       network: 'Base Sepolia',
       chainId: 84532,
       balanceWei: wei.toString(),
       balanceEth: Number(formatEther(wei)),
       explorer: `https://sepolia.basescan.org/address/${address}`,
-      smartAccountAddress: walletState.isLive
-        ? walletState.smartAccountAddress
-        : null,
     });
   } catch (err) {
     console.error('[On-chain Wallet]', err.message);

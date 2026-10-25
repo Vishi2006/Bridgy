@@ -107,6 +107,13 @@ void _handleAuthRedirect(Uri uri) {
     'error_description',
   };
   final fragment = Uri.splitQueryString(uri.fragment);
+  final tokenHash = uri.queryParameters['token_hash'] ?? fragment['token_hash'];
+  final otpType = uri.queryParameters['type'] ?? fragment['type'];
+  if (tokenHash != null && otpType != null) {
+    _verifyEmailOtp(tokenHash, otpType);
+    return;
+  }
+
   final isSupabaseLink =
       uri.queryParameters.keys.any(authKeys.contains) ||
       fragment.keys.any(authKeys.contains);
@@ -193,6 +200,40 @@ void _handleAuthRedirect(Uri uri) {
       ),
     );
   }
+}
+
+Future<void> _verifyEmailOtp(String tokenHash, String type) async {
+  try {
+    await BridgyBackend.verifyEmailOtp(tokenHash, type);
+  } catch (error) {
+    _showAuthError(error);
+  }
+}
+
+void _showAuthError(Object error) {
+  final context = _navigatorKey.currentContext;
+  if (context == null) return;
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text(
+        'Email verification failed',
+        style: displayStyle(size: 20, spacing: -0.4),
+      ),
+      content: Text(
+        error.toString(),
+        style: uiStyle(size: 12, color: AppColors.negative, height: 1.45),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: Text('Close', style: uiStyle(size: 12)),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Floating HUD entry point, resolved by name from the overlay service.

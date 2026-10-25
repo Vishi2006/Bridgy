@@ -67,6 +67,20 @@ class BridgyBackend {
     );
   }
 
+  /// Finishes an email confirmation or recovery link that arrived as a
+  /// `token_hash` on the custom scheme.
+  static Future<AuthResponse> verifyEmailOtp(String tokenHash, String type) {
+    final supabase = client;
+    if (supabase == null) throw const BackendNotConfigured();
+    final otpType = switch (type) {
+      'recovery' => OtpType.recovery,
+      'magiclink' => OtpType.magiclink,
+      'invite' => OtpType.invite,
+      _ => OtpType.signup,
+    };
+    return supabase.auth.verifyOTP(tokenHash: tokenHash, type: otpType);
+  }
+
   /// Sends a passwordless sign-in link.
   static Future<void> sendMagicLink(String email) {
     final supabase = client;

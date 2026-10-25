@@ -154,7 +154,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
           Row(
             children: [
               Text(
-                'YOUR ON-CHAIN ADDRESS',
+                'BRIDGY BASE SEPOLIA VAULT',
                 style: uiStyle(
                   size: 10,
                   weight: FontWeight.w700,
@@ -300,8 +300,8 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
             'to it.\n'
             '3. Refresh here: the balance above reads directly from the Base '
             'Sepolia RPC.\n\n'
-            'This is testnet ETH. The ₹ wallet balance is a separate ledger '
-            'and is not stored on-chain.',
+            'This is the testnet vault for this Bridgy deployment. Testnet ETH '
+            'is separate from the ₹ ledger balance and has no cash value.',
             style: uiStyle(size: 12, color: AppColors.muted, height: 1.55),
           ),
         ],

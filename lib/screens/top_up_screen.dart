@@ -7,6 +7,7 @@ import '../icons.dart';
 import '../services/wallet_service.dart';
 import '../state/wallet_store.dart';
 import '../theme.dart';
+import 'receive_screen.dart';
 
 /// Real UPI top-up through a Razorpay payment link.
 ///
@@ -257,9 +258,24 @@ class _TopUpScreenState extends State<TopUpScreen> {
               Text(
                 'You enter your UPI ID and UPI PIN inside Razorpay or your UPI '
                 'app. Bridgy never sees the PIN. The wallet is credited only '
-                'after Razorpay confirms the payment.',
+                'after Razorpay confirms the payment. UPI needs Razorpay keys '
+                'on the backend.',
                 textAlign: TextAlign.center,
                 style: uiStyle(size: 11, color: AppColors.muted, height: 1.5),
+              ),
+              const SizedBox(height: 4),
+              TextButton(
+                key: const Key('topup-testnet'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ReceiveScreen(),
+                  ),
+                ),
+                child: Text(
+                  'Top up with Base Sepolia testnet ETH instead',
+                  textAlign: TextAlign.center,
+                  style: uiStyle(size: 12, color: AppColors.goldText),
+                ),
               ),
             ],
           ),

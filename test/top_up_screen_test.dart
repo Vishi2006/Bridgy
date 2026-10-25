@@ -141,6 +141,18 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('testnet ETH path opens the receive screen', (tester) async {
+    await tester.pumpWidget(_app(launchPayment: (uri) async => true));
+
+    await tester.tap(find.byKey(const Key('topup-testnet')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Receive'), findsOneWidget);
+    expect(find.text('Base Sepolia • MetaMask'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('expired payment stops polling and adds no money', (
     tester,
   ) async {

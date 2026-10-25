@@ -313,7 +313,22 @@ The app's wallet base URL is `https://bridgy-backend.vercel.app`. Deploy `Backen
 curl -s -o /dev/null -w '%{http_code}\n' https://bridgy-backend.vercel.app/api/wallet/balance
 ```
 
+Required on the host: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_REDIRECT_URL`. Without the service-role key the backend refuses to start, because wallet writes must never use the anon key.
+
+Optional: `OPENROUTER_API_KEY` (or a real `AGENT_API_KEY`), `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `OWNER_PRIVATE_KEY`, `ZERODEV_PROJECT_ID`, `BASE_SEPOLIA_RPC_URL`, `BRIDGY_UPI_VAULT`, `MERCHANT_SETTLEMENT_READY`.
+
 Until the new routes are deployed, the release app shows `Cannot GET /api/wallet/balance` verbatim. There is no localhost fallback in the release build. A user must sign up before `auth.users` has rows; an empty `auth.users` table in the SQL editor means no account has been created yet.
+
+Top-up has two separate rails:
+
+| Rail | Confirmation | Works without a PSP? |
+| --- | --- | --- |
+| UPI / INR ledger | Razorpay payment link + signed webhook | No |
+| Base Sepolia ETH | On-chain balance at the receive address | Yes; testnet ETH has no cash value |
+
+The Top up screen links to the Base Sepolia receive screen, so testnet ETH can be sent and watched without Razorpay keys. INR top-up stays unavailable until Razorpay keys are set.
+
+Email confirmation links can land on `GET /auth/callback`; that page forwards the query and fragment to `bridgy://login-callback` and shows an **Open Bridgy** button for in-app browsers. The app also verifies `token_hash` links itself. Set the Supabase Site URL to an https URL and keep `bridgy://login-callback` in the redirect allow list.
 
 ### 2. Run the app
 
