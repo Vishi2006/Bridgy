@@ -73,7 +73,17 @@ class UpiCheckoutScreen extends StatelessWidget {
             Text(intent.note, style: uiStyle(size: 12, color: AppColors.muted)),
           ],
           const SizedBox(height: 22),
-          _decisionCard(decision, intent.amountInr, controller),
+          InkWell(
+            onTap: decision == PolicyDecision.reject
+                ? () => _showBlockedDialog(
+                      context,
+                      amountInr: intent.amountInr,
+                      remainingInr: controller.policy.remainingTodayInr,
+                    )
+                : null,
+            borderRadius: BorderRadius.circular(22),
+            child: _decisionCard(decision, intent.amountInr, controller),
+          ),
           const Spacer(),
           _action(context, decision, intent, controller),
         ],
@@ -99,9 +109,9 @@ class UpiCheckoutScreen extends StatelessWidget {
         AppColors.goldDeep,
       ),
       PolicyDecision.reject => (
-        'Blocked by policy',
-        'Daily budget, expiry, or amount check failed. The contract would '
-            'revert this transaction.',
+        'Blocked by policy (Low Budget)',
+        'Daily budget or expiry check failed. Tap to see guardrail details. '
+            'The contract would revert this transaction.',
         AppColors.negative,
       ),
     };
@@ -176,7 +186,11 @@ class UpiCheckoutScreen extends StatelessWidget {
               }
               _submit(context, decision, intent, controller);
             }
-          : null,
+          : () => _showBlockedDialog(
+                context,
+                amountInr: intent.amountInr,
+                remainingInr: controller.policy.remainingTodayInr,
+              ),
       radius: 30,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -205,6 +219,7 @@ class UpiCheckoutScreen extends StatelessWidget {
     UpiIntent intent,
     PolicyController controller,
   ) {
+    final authType = decision == PolicyDecision.ownerApproval ? 'OWNER_PAID' : 'AGENT_PAID';
     final message = decision == PolicyDecision.ownerApproval
         ? 'Approved with owner key. Nothing was charged.'
         : 'Paid ₹${intent.amountInr.toStringAsFixed(0)} via session key. Nothing was charged.';
@@ -221,6 +236,15 @@ class UpiCheckoutScreen extends StatelessWidget {
         merchantVpa: intent.merchantVpa,
       ).then((res) {
         controller.load();
+        if (context.mounted && res.success) {
+          _showSuccessDialog(
+            context,
+            merchant: intent.merchantName,
+            amountInr: intent.amountInr,
+            authType: authType,
+            txHash: res.txHash,
+          );
+        }
       }).catchError((_) {});
     } else {
       WalletService.payWithAgent(
@@ -229,8 +253,205 @@ class UpiCheckoutScreen extends StatelessWidget {
         merchantVpa: intent.merchantVpa,
       ).then((res) {
         controller.load();
+        if (context.mounted && res.success) {
+          _showSuccessDialog(
+            context,
+            merchant: intent.merchantName,
+            amountInr: intent.amountInr,
+            authType: authType,
+            txHash: res.txHash,
+          );
+        }
       }).catchError((_) {});
     }
+  }
+
+  void _showSuccessDialog(
+    BuildContext context, {
+    required String merchant,
+    required double amountInr,
+    required String authType,
+    String? txHash,
+  }) {
+    final truncatedHash = txHash != null && txHash.length > 14
+        ? '${txHash.substring(0, 8)}...${txHash.substring(txHash.length - 6)}'
+        : (txHash ?? '0x3a4f...mock');
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFFDCFCE7),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF86EFAC)),
+              ),
+              child: const Center(
+                child: AppIcon(Icons8.check, size: 28, color: Color(0xFF15803D)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Payment Settled!',
+              style: displayStyle(size: 22, spacing: -0.6),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '₹${amountInr.toStringAsFixed(2)} to $merchant',
+              style: uiStyle(size: 14, weight: FontWeight.w700, color: AppColors.ink),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.bgAlt,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Settlement Rail:', style: uiStyle(size: 11.5, color: AppColors.muted)),
+                      Text('Bridgy UPI Vault (INR)', style: uiStyle(size: 11.5, weight: FontWeight.w700)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Security Policy:', style: uiStyle(size: 11.5, color: AppColors.muted)),
+                      Text(authType, style: uiStyle(size: 11.5, weight: FontWeight.w700, color: AppColors.goldText)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Base Sepolia Hash:', style: uiStyle(size: 11.5, color: AppColors.muted)),
+                      Text(truncatedHash, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            InkResponse(
+              onTap: () => Navigator.of(ctx).pop(),
+              radius: 24,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.dark,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Center(
+                  child: Text(
+                    'Return to App',
+                    style: uiStyle(size: 13, weight: FontWeight.w700, color: AppColors.card),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBlockedDialog(
+    BuildContext context, {
+    required double amountInr,
+    required double remainingInr,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: const Center(
+                child: AppIcon(Icons8.alert, size: 28, color: Color(0xFFDC2626)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Payment Blocked!',
+              style: displayStyle(size: 22, spacing: -0.6),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Insufficient Daily Budget / Low Fund',
+              style: uiStyle(size: 13, weight: FontWeight.w700, color: AppColors.negative),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.bgAlt,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Requested: ₹${amountInr.round()} • Remaining Budget: ₹${remainingInr.round()}',
+                    style: uiStyle(size: 12, weight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'The ZeroDev smart contract guardrail reverted this transaction. '
+                    'The autonomous AI agent is mathematically prevented from spending more than your configured daily limit.',
+                    style: uiStyle(size: 11.5, color: AppColors.muted, height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            InkResponse(
+              onTap: () => Navigator.of(ctx).pop(),
+              radius: 24,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.dark,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Center(
+                  child: Text(
+                    'Dismiss & Keep Safe',
+                    style: uiStyle(size: 13, weight: FontWeight.w700, color: AppColors.card),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _scaffold(BuildContext context, {required Widget body}) {
