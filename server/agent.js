@@ -1,5 +1,7 @@
 import { parseStringPromise } from 'xml2js';
 
+import { MODEL, openRouterKey } from './config.js';
+
 const MAX_NODES = 40;
 
 /**
@@ -80,8 +82,8 @@ Rules:
 - If the goal is already complete or the screen cannot help, use {"thought": "...", "command": "input keyevent 3"}.`;
 
 export async function askModel({ userGoal, nodes }) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set');
+  const apiKey = openRouterKey();
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is missing from server/.env');
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -92,9 +94,11 @@ export async function askModel({ userGoal, nodes }) {
       'X-Title': 'Bridgy',
     },
     body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL ?? 'deepseek/deepseek-chat',
+      model: MODEL,
       temperature: 0,
-      max_tokens: 200,
+      max_tokens: 1200,
+      reasoning: { effort: 'low', exclude: true },
+      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         {

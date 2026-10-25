@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    id("com.google.devtools.ksp")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -46,4 +47,12 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    implementation("androidx.appfunctions:appfunctions:1.0.0-alpha08")
+    implementation("androidx.appfunctions:appfunctions-service:1.0.0-alpha08")
+    ksp("androidx.appfunctions:appfunctions-compiler:1.0.0-alpha08")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+}
+
+ksp {
+    arg("appfunctions:aggregateAppFunctions", "true")
 }

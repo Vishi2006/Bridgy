@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bridgy/main.dart';
-
-const gold = Color(0xFFC9A961);
 
 Future<void> loadFont(String family, List<String> assets) async {
   final loader = FontLoader(family);
@@ -14,26 +13,30 @@ Future<void> loadFont(String family, List<String> assets) async {
   await loader.load();
 }
 
+Future<void> tapAndSettle(WidgetTester tester, Finder finder) async {
+  await tester.tap(finder);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
 void main() {
   setUpAll(() async {
-    await loadFont('Manrope', [
-      'assets/fonts/Manrope-400.ttf',
-      'assets/fonts/Manrope-500.ttf',
-      'assets/fonts/Manrope-600.ttf',
-      'assets/fonts/Manrope-700.ttf',
-      'assets/fonts/Manrope-800.ttf',
+    await loadFont('PlusJakartaSans', [
+      'assets/fonts/plus_jakarta/PlusJakartaSans-Regular.ttf',
+      'assets/fonts/plus_jakarta/PlusJakartaSans-Medium.ttf',
+      'assets/fonts/plus_jakarta/PlusJakartaSans-SemiBold.ttf',
+      'assets/fonts/plus_jakarta/PlusJakartaSans-Bold.ttf',
+      'assets/fonts/plus_jakarta/PlusJakartaSans-ExtraBold.ttf',
     ]);
-    await loadFont('Fraunces', [
-      'assets/fonts/Fraunces-600.ttf',
-      'assets/fonts/Fraunces-700.ttf',
-    ]);
-    await loadFont('PlayfairDisplay', [
-      'assets/fonts/PlayfairDisplay-700-Italic.ttf',
-    ]);
-    await loadFont('JetBrainsMono', ['assets/fonts/JetBrainsMono-500.ttf']);
   });
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.bridgy.bridgy/accessibility'),
+          (call) async => call.method == 'isServiceRunning' ? false : null,
+        );
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first.physicalSize = const Size(
       1170,
@@ -43,81 +46,72 @@ void main() {
   });
 
   tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.bridgy.bridgy/accessibility'),
+          null,
+        );
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first.resetPhysicalSize();
     binding.platformDispatcher.views.first.resetDevicePixelRatio();
   });
 
-  testWidgets('home shows Pesse branding, balance and matte gold chip', (
+  testWidgets('home matches the reference content', (tester) async {
+    await tester.pumpWidget(const MyApp());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Notification'), findsOneWidget);
+    expect(find.text('Donate for Ukraine'), findsOneWidget);
+    expect(find.text('Recent Activity'), findsOneWidget);
+    expect(find.text('Dribbble'), findsOneWidget);
+    expect(find.text('Mailchimp'), findsOneWidget);
+    expect(find.byKey(const Key('nav-home')), findsOneWidget);
+    expect(find.byKey(const Key('nav-plus')), findsOneWidget);
+    expect(find.byKey(const Key('nav-agent')), findsOneWidget);
+  });
+
+  testWidgets('plus opens Send Money and keypad updates the amount', (
     tester,
   ) async {
     await tester.pumpWidget(const MyApp());
+    await tapAndSettle(tester, find.byKey(const Key('nav-plus')));
 
-    expect(find.text('Pesse'), findsOneWidget);
-    expect(find.text('\$521,098.31'), findsOneWidget);
+    expect(find.text('Send Money'), findsOneWidget);
+    expect(find.text('Donate for Ukraine'), findsOneWidget);
+    expect(find.text('00.00'), findsOneWidget);
 
-    final chip = tester.widget<Container>(find.byKey(const Key('card-chip')));
-    expect((chip.decoration! as BoxDecoration).color, gold);
-  });
-
-  testWidgets('Send opens the send money screen', (tester) async {
-    await tester.pumpWidget(const MyApp());
-
-    await tester.tap(find.byKey(const Key('send-button')));
+    await tester.tap(find.text('5'));
+    await tester.tap(find.text('0'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('Send to'), findsOneWidget);
-    expect(find.text('Syaiful Rijal'), findsWidgets);
+    expect(find.text('50'), findsOneWidget);
   });
 
-  testWidgets('balance selector opens the select card screen', (tester) async {
-    await tester.pumpWidget(const MyApp());
-
-    await tester.tap(find.byKey(const Key('balance-selector')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Select Card'), findsOneWidget);
-    expect(find.text('New card'), findsOneWidget);
-
-    final firstCard = tester.widget<Container>(
-      find
-          .descendant(
-            of: find.byKey(const Key('card-lime')),
-            matching: find.byType(Container),
-          )
-          .first,
-    );
-    expect((firstCard.decoration! as BoxDecoration).color, gold);
-  });
-
-  testWidgets('close returns from select card to home', (tester) async {
-    await tester.pumpWidget(const MyApp());
-
-    await tester.tap(find.byKey(const Key('balance-selector')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('close-cards')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('\$521,098.31'), findsOneWidget);
-  });
-
-  testWidgets('keypad appends digits and backspace removes them', (
+  testWidgets('back returns from Send Money to the home footer', (
     tester,
   ) async {
     await tester.pumpWidget(const MyApp());
-    await tester.tap(find.byKey(const Key('send-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tapAndSettle(tester, find.byKey(const Key('nav-plus')));
+    await tapAndSettle(tester, find.byKey(const Key('send-back')));
 
-    expect(find.text('\$19'), findsOneWidget);
+    expect(find.byKey(const Key('nav-plus')), findsOneWidget);
+    expect(find.text('Notification'), findsOneWidget);
+  });
 
-    await tester.tap(find.text('7'));
-    await tester.pump();
-    expect(find.text('\$197'), findsOneWidget);
+  testWidgets('agent glyph opens the agent window', (tester) async {
+    await tester.pumpWidget(const MyApp());
+    await tapAndSettle(tester, find.byKey(const Key('nav-agent')));
 
-    await tester.tap(find.byKey(const Key('key-backspace')));
-    await tester.pump();
-    expect(find.text('\$19'), findsOneWidget);
+    expect(find.text('AI Agent'), findsOneWidget);
+    expect(find.text('What should we do?'), findsOneWidget);
+    expect(find.byKey(const Key('agent-send')), findsOneWidget);
+    expect(find.byKey(const Key('nav-home')), findsOneWidget);
+  });
+
+  testWidgets('agent composer accepts text without the network', (tester) async {
+    await tester.pumpWidget(const MyApp());
+    await tapAndSettle(tester, find.byKey(const Key('nav-agent')));
+
+    await tester.enterText(find.byType(TextField).last, 'hello');
+    expect(find.text('hello'), findsOneWidget);
   });
 }

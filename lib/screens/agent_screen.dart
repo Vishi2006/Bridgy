@@ -56,8 +56,10 @@ class _AgentScreenState extends State<AgentScreen> {
       }
     });
     if (!installed) {
-      _append('Termux not found. Install Termux + android-tools, then pair '
-          'wireless ADB.');
+      _append(
+        'Termux not found. Install Termux + android-tools, then pair '
+        'wireless ADB.',
+      );
     }
   }
 
@@ -107,7 +109,6 @@ class _AgentScreenState extends State<AgentScreen> {
       _append('Overlay error: $e');
     }
   }
-
 
   Future<void> _start() async {
     if (_running) {
@@ -225,6 +226,7 @@ class _AgentScreenState extends State<AgentScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
+        bottom: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Column(
@@ -268,12 +270,11 @@ class _AgentScreenState extends State<AgentScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('Termux', style: displayStyle(size: 22, spacing: -0.6)),
             Text(
-              'Agent',
-              style: displayStyle(size: 22, spacing: -0.6),
-            ),
-            Text(
-              _fastMode ? 'fast mode · calibrated taps' : 'live · deepseek loop',
+              _fastMode
+                  ? 'fast mode · calibrated taps'
+                  : 'live · deepseek loop',
               style: uiStyle(size: 11, color: AppColors.muted),
             ),
           ],
@@ -344,9 +345,7 @@ class _AgentScreenState extends State<AgentScreen> {
         Switch.adaptive(
           value: _fastMode,
           activeThumbColor: AppColors.gold,
-          onChanged: _running
-              ? null
-              : (v) => setState(() => _fastMode = v),
+          onChanged: _running ? null : (v) => setState(() => _fastMode = v),
         ),
         const SizedBox(width: 4),
         Text('Fast mode', style: uiStyle(size: 13, weight: FontWeight.w600)),

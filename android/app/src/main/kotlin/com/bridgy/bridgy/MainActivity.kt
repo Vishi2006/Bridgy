@@ -7,6 +7,7 @@ import android.util.DisplayMetrics
 import java.io.File
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 /**
@@ -18,12 +19,18 @@ import io.flutter.plugin.common.MethodChannel
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "com.bridgy.app/adb"
+    private val goalsChannelName = "com.bridgy.app/goals"
+    private val goalsEventChannelName = "com.bridgy.app/goals/stream"
     private var pendingText: String? = null
+    private var pendingGoal: String? = null
+    private var goalSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         pendingText = extractText(intent)
+        pendingGoal = extractGoal(intent)
         AccessibilityBridge.attach(flutterEngine, applicationContext)
+        registerGoalChannels(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -49,10 +56,61 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    /** Cold-start goal read plus a stream for warm-start intents. */
+    private fun registerGoalChannels(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, goalsChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "takeLaunchGoal" -> {
+                        result.success(pendingGoal)
+                        pendingGoal = null
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, goalsEventChannelName)
+            .setStreamHandler(
+                object : EventChannel.StreamHandler {
+                    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                        goalSink = events
+                        val pending = pendingGoal
+                        if (pending != null) {
+                            pendingGoal = null
+                            events?.success(pending)
+                        }
+                    }
+
+                    override fun onCancel(arguments: Any?) {
+                        goalSink = null
+                    }
+                },
+            )
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingText = extractText(intent) ?: pendingText
+        val goal = extractGoal(intent)
+        if (goal != null) {
+            val sink = goalSink
+            if (sink != null) {
+                pendingGoal = null
+                sink.success(goal)
+            } else {
+                pendingGoal = goal
+            }
+        }
+    }
+
+    private fun extractGoal(intent: Intent?): String? {
+        if (intent == null) return null
+        val goal = intent.getStringExtra(EXTRA_GOAL)
+            ?: intent.getStringExtra(SearchManager.QUERY)
+            ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+            ?: intent.getStringExtra("query")
+        return goal?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     private fun extractText(intent: Intent?): String? {
@@ -106,7 +164,8 @@ class MainActivity : FlutterActivity() {
         return "${w}x${h}"
     }
 
-    private companion object {
+    companion object {
+        const val EXTRA_GOAL = "com.bridgy.bridgy.AGENT_GOAL"
         const val TERMUX_PACKAGE = "com.termux"
         val DUMP_PATHS = listOf(
             "/sdcard/window_dump.xml",

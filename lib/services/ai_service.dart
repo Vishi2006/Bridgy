@@ -12,44 +12,11 @@ class AiResponse {
 }
 
 class AiService {
-  static const String _defaultBaseUrl = 'https://api.deepseek.com';
-  static const String _defaultModel = 'deepseek-chat';
-  static const String nvidiaBaseUrl = 'https://integrate.api.nvidia.com/v1';
-  static const String nvidiaDefaultModel = 'z-ai/glm-5.2';
-  static const String openRouterBaseUrl = 'https://openrouter.ai/api/v1';
-  static const String openRouterDefaultModel = 'poolside/laguna-s-2.1:free';
-
-  /// Free, general-purpose chat endpoints verified in NVIDIA's NIM catalog.
-  /// The live /models response is intersected with this list so unavailable or
-  /// non-chat models never appear in Bridgy's NVIDIA model picker.
-  static const List<String> nvidiaFreeChatModels = [
-    'z-ai/glm-5.2',
-    'nvidia/nemotron-3-nano-30b-a3b',
-    'nvidia/nemotron-3-super-120b-a12b',
-    'nvidia/nemotron-3-ultra-550b-a55b',
-    'nvidia/nvidia-nemotron-nano-9b-v2',
-    'openai/gpt-oss-20b',
-    'openai/gpt-oss-120b',
-    'meta/llama-3.3-70b-instruct',
-    'meta/llama-3.2-3b-instruct',
-    'meta/llama-3.1-8b-instruct',
-    'meta/llama-3.1-70b-instruct',
-    'mistralai/mistral-nemotron',
-    'deepseek-ai/deepseek-v4-flash',
-    'deepseek-ai/deepseek-v4-pro',
-  ];
-
-  static bool isNvidiaBaseUrl(String baseUrl) {
-    final uri = Uri.tryParse(baseUrl.trim());
-    return uri?.host.toLowerCase() == 'integrate.api.nvidia.com';
-  }
-
-  static List<String> filterNvidiaFreeModels(Iterable<String> models) {
-    final availableModels = models.toSet();
-    return nvidiaFreeChatModels
-        .where(availableModels.contains)
-        .toList(growable: false);
-  }
+  static const String _defaultBaseUrl = String.fromEnvironment(
+    'BRIDGY_AGENT_URL',
+    defaultValue: 'http://10.0.2.2:8787',
+  );
+  static const String _defaultModel = 'deepseek/deepseek-v4.1-flash-1017';
 
   String? _apiKey;
   String _baseUrl = _defaultBaseUrl;
@@ -57,7 +24,7 @@ class AiService {
   int _maxSteps = 15;
   bool _disableMaxSteps = false;
   double _temperature = 1.0;
-  int _maxTokens = 1024;
+  int _maxTokens = 2048;
   bool _useScreenCompression = true;
   bool _useSystemPrompt = true;
   final List<Map<String, String>> _conversationHistory = [];
@@ -118,50 +85,19 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    const envKey = String.fromEnvironment('BRIDGY_AI_KEY');
     const envBaseUrl = String.fromEnvironment(
-      'BRIDGY_AI_BASE_URL',
+      'BRIDGY_AGENT_URL',
       defaultValue: _defaultBaseUrl,
     );
-    const envModel = String.fromEnvironment(
-      'BRIDGY_AI_MODEL',
-      defaultValue: _defaultModel,
-    );
-    _apiKey = prefs.getString('api_key') ?? (envKey.isEmpty ? null : envKey);
-    _baseUrl = prefs.getString('api_base_url') ?? envBaseUrl;
-    _model = prefs.getString('api_model') ?? envModel;
+    _apiKey = 'server-proxy';
+    _baseUrl = envBaseUrl.endsWith('/api') ? envBaseUrl : '$envBaseUrl/api';
+    _model = _defaultModel;
     _maxSteps = prefs.getInt('api_max_steps') ?? 15;
     _disableMaxSteps = prefs.getBool('api_disable_max_steps') ?? false;
     _temperature = prefs.getDouble('api_temperature') ?? 1.0;
-    _maxTokens = prefs.getInt('api_max_tokens') ?? 1024;
+    _maxTokens = prefs.getInt('api_max_tokens') ?? 2048;
     _useScreenCompression = prefs.getBool('api_use_screen_compression') ?? true;
     _useSystemPrompt = prefs.getBool('api_use_system_prompt') ?? true;
-  }
-
-  Future<void> saveSettings({
-    required String apiKey,
-    String? baseUrl,
-    String? model,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Clean up the API key in case the user pasted "Bearer sk-..."
-    String cleanApiKey = apiKey.trim();
-    if (cleanApiKey.toLowerCase().startsWith('bearer ')) {
-      cleanApiKey = cleanApiKey.substring(7).trim();
-    }
-
-    _apiKey = cleanApiKey;
-    await prefs.setString('api_key', cleanApiKey);
-
-    if (baseUrl != null && baseUrl.isNotEmpty) {
-      _baseUrl = baseUrl;
-      await prefs.setString('api_base_url', baseUrl);
-    }
-    if (model != null && model.isNotEmpty) {
-      _model = model;
-      await prefs.setString('api_model', model);
-    }
   }
 
   Future<void> saveMaxSteps(int steps) async {
@@ -193,7 +129,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
     await prefs.setBool('api_use_system_prompt', useSystemPrompt);
   }
 
-  bool get isConfigured => _apiKey != null && _apiKey!.isNotEmpty;
+  bool get isConfigured => _baseUrl.isNotEmpty;
   String get baseUrl => _baseUrl;
   String get model => _model;
   String get apiKey => _apiKey ?? '';
@@ -204,17 +140,6 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
   int get maxTokens => _maxTokens;
   bool get useScreenCompression => _useScreenCompression;
   bool get useSystemPrompt => _useSystemPrompt;
-
-  int get _effectiveMaxTokens {
-    // GLM is a reasoning model. With the app's 1,024-token default it can
-    // consume the whole budget reasoning and finish without visible content.
-    if (isNvidiaBaseUrl(_baseUrl) &&
-        _model == nvidiaDefaultModel &&
-        _maxTokens < 4096) {
-      return 4096;
-    }
-    return _maxTokens;
-  }
 
   void clearHistory() {
     _conversationHistory.clear();
@@ -264,7 +189,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
         'model': _model,
         'messages': messages,
         'temperature': _temperature,
-        'max_tokens': _effectiveMaxTokens,
+        'max_tokens': _maxTokens,
       });
 
       if (kDebugMode) {
@@ -388,7 +313,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
         'model': _model,
         'messages': messages,
         'temperature': _temperature,
-        'max_tokens': _effectiveMaxTokens,
+        'max_tokens': _maxTokens,
         'stream': true,
       });
 
@@ -477,7 +402,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
       if (finalResponse.isEmpty) {
         throw Exception(
           'The model finished without a visible answer. Increase Max Tokens '
-          'or try another NVIDIA model.',
+          'and retry.',
         );
       }
       _conversationHistory.add({'role': 'assistant', 'content': finalResponse});
@@ -527,7 +452,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
                 'model': _model,
                 'messages': messages,
                 'temperature': _temperature,
-                'max_tokens': _effectiveMaxTokens,
+                'max_tokens': _maxTokens,
               }),
             )
             .timeout(const Duration(minutes: 30));
@@ -629,47 +554,5 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
       // Not JSON, it's plain text conversation
     }
     return null;
-  }
-
-  /// Fetches available models from the provider's /models endpoint
-  Future<List<String>> fetchAvailableModels(
-    String baseUrl,
-    String apiKey,
-  ) async {
-    try {
-      String cleanBaseUrl = baseUrl;
-      // Many providers host it at /models, but some require the base URL without /chat/completions logic
-      if (cleanBaseUrl.endsWith('/chat/completions')) {
-        cleanBaseUrl = cleanBaseUrl.replaceAll('/chat/completions', '');
-      }
-
-      final response = await _client.get(
-        Uri.parse('$cleanBaseUrl/models'),
-        headers: {'Authorization': 'Bearer $apiKey'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        List<String> models;
-        if (data is Map && data.containsKey('data')) {
-          final modelsList = data['data'] as List;
-          models = modelsList.map((m) => m['id'].toString()).toList();
-        } else if (data is List) {
-          models = data.map((m) => m['id'].toString()).toList();
-        } else {
-          return [];
-        }
-
-        if (isNvidiaBaseUrl(cleanBaseUrl)) {
-          return filterNvidiaFreeModels(models);
-        }
-        models.sort();
-        return models;
-      }
-      return [];
-    } catch (e) {
-      print('Error fetching models: $e');
-      return [];
-    }
   }
 }

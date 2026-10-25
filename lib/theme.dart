@@ -76,7 +76,7 @@ TextStyle displayStyle({
   height: height,
 );
 
-ThemeData pesseTheme() {
+ThemeData bridgyTheme() {
   final base = ThemeData(
     useMaterial3: true,
     fontFamily: AppFonts.ui,

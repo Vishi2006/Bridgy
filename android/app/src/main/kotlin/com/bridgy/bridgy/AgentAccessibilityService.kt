@@ -198,6 +198,8 @@ class AgentAccessibilityService : AccessibilityService() {
 
     /** Find and click a node by its text content */
     fun clickByText(targetText: String): Boolean {
+        val target = normalizeLabel(targetText)
+        if (target.isEmpty()) return false
         for (window in windows) {
             val root = window.root ?: continue
             if (root.packageName?.toString() == ownPackageName) {
@@ -207,14 +209,26 @@ class AgentAccessibilityService : AccessibilityService() {
             // Prefer an actual suggestion/button over an editable search field
             // that contains the same query. Editables remain the final fallback
             // so the agent can still focus a search box by its label.
-            val result = findAndClickNode(root, targetText, true, true)
-                || findAndClickNode(root, targetText, false, true)
-                || findAndClickNode(root, targetText, true, false)
-                || findAndClickNode(root, targetText, false, false)
+            val result = findAndClickNode(root, target, true, true)
+                || findAndClickNode(root, target, false, true)
+                || findAndClickNode(root, target, true, false)
+                || findAndClickNode(root, target, false, false)
             root.recycle()
             if (result) return true
         }
         return false
+    }
+
+    /**
+     * Screen dumps truncate labels at 50 chars and append "...", and models
+     * sometimes quote the label or prefix it with the dump id. Normalize those
+     * back to the real label so contains() can find the live node.
+     */
+    private fun normalizeLabel(raw: String): String {
+        var value = raw.trim().trim('"', '\'', '“', '”')
+        value = value.replace(Regex("""^\[\d+]\*?\s*"""), "")
+        value = value.removeSuffix("...").removeSuffix("…").trim()
+        return value
     }
 
     private fun findAndClickNode(
@@ -288,7 +302,16 @@ class AgentAccessibilityService : AccessibilityService() {
             }
 
             if (editNode != null) {
-                editNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                // Focusing an already-focused field toggles the IME: the
+                // keyboard hides and reappears on every step. Focus only when
+                // the field is not focused, and skip identical re-writes.
+                if (editNode.text?.toString() == text) {
+                    root.recycle()
+                    return true
+                }
+                if (!editNode.isFocused) {
+                    editNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                }
                 val args = Bundle()
                 args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
                 val success = editNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)

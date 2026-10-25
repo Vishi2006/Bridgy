@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
 
-import 'package:bridgy/screens/home_screen.dart';
-import 'package:bridgy/screens/select_card_screen.dart';
+import 'package:bridgy/screens/agent_chat_screen.dart';
+import 'package:bridgy/screens/app_shell.dart';
 import 'package:bridgy/screens/send_money_screen.dart';
-import 'package:bridgy/theme.dart';
+import 'package:bridgy/unipay.dart';
 
-/// Design preview entrypoint: `flutter run -t tool/preview.dart`
-/// URL query `?screen=cards` or `?screen=send` selects a screen on web.
+/// `flutter run -t tool/preview.dart` and `?screen=send|agent`.
 void main() {
   final screen = Uri.base.queryParameters['screen'];
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: pesseTheme(),
+      theme: unipayTheme(),
       home: switch (screen) {
-        'cards' => const SelectCardScreen(),
-        'send' => const SendMoneyScreen(),
-        _ => const HomeScreen(),
+        'send' => SendMoneyScreen(onSent: () {}),
+        'agent' => const Scaffold(body: AgentChatScreen()),
+        _ => const AppShell(),
       },
     ),
   );

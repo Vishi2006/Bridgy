@@ -15,7 +15,8 @@
 
     <application
         android:label="Bridgy"
-        android:name="${applicationName}"
+        android:usesCleartextTraffic="true"
+        android:name=".BridgyApplication"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -38,15 +39,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Assistant / share text: "Open Bridgy and book a cab to Manipal" -->
+            <!-- Share text into Bridgy. Generic ASSIST is deliberately not
+                 registered: Gemini must call the AppFunction below so the goal
+                 arrives as a required argument. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.ASSIST" />
-                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <!-- Bridgy as a UPI payment app -->
             <intent-filter>
@@ -78,6 +77,11 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- The only assistant-facing action: Gemini passes the task as a
+             required goal argument. The Jetpack service is merged from the
+             appfunctions-service manifest; BridgyApplication registers the
+             BridgyAppFunctions class. -->
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

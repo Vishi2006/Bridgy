@@ -47,7 +47,7 @@ void main() {
   });
 
   Widget app(String link) => MaterialApp(
-    theme: pesseTheme(),
+    theme: bridgyTheme(),
     home: UpiCheckoutScreen(link: link),
   );
 

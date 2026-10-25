@@ -6,7 +6,10 @@ import '../theme.dart';
 
 /// Spending policy editor: per-transaction limit, daily limit, expiry.
 class PolicyScreen extends StatefulWidget {
-  const PolicyScreen({super.key});
+  const PolicyScreen({super.key, this.embedded = false});
+
+  /// Shown as a shell tab: no back arrow, footer provides navigation.
+  final bool embedded;
 
   @override
   State<PolicyScreen> createState() => _PolicyScreenState();
@@ -29,6 +32,7 @@ class _PolicyScreenState extends State<PolicyScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
+        bottom: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Column(
@@ -57,23 +61,25 @@ class _PolicyScreenState extends State<PolicyScreen> {
   Widget _header() {
     return Row(
       children: [
-        InkResponse(
-          onTap: () => Navigator.of(context).maybePop(),
-          radius: 22,
-          child: Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.card,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.border),
-            ),
-            child: const Center(
-              child: AppIcon(Icons8.back, size: 16, color: AppColors.ink),
+        if (!widget.embedded) ...[
+          InkResponse(
+            onTap: () => Navigator.of(context).maybePop(),
+            radius: 22,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Center(
+                child: AppIcon(Icons8.back, size: 16, color: AppColors.ink),
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 12),
+          const SizedBox(width: 12),
+        ],
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -118,7 +124,10 @@ class _PolicyScreenState extends State<PolicyScreen> {
   Widget _limitCard() {
     return _card(
       children: [
-        Text('Per transaction', style: uiStyle(size: 12, color: AppColors.muted)),
+        Text(
+          'Per transaction',
+          style: uiStyle(size: 12, color: AppColors.muted),
+        ),
         const SizedBox(height: 4),
         Text(
           '₹${_controller.perTxLimitInr.round()}',
@@ -255,7 +264,10 @@ class _PolicyScreenState extends State<PolicyScreen> {
         border: Border.all(color: AppColors.border),
         boxShadow: AppShadows.soft,
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 }

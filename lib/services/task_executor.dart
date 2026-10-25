@@ -52,43 +52,49 @@ class TaskExecutor {
   }
 
   static const String _taskSystemPrompt = '''
-You are a phone automation agent. You are given a TASK and the current SCREEN content.
-You must decide what single action to take next to accomplish the task.
+You are Bridgy, an Android UI operator. The accessibility dump is the ONLY truth. Never invent apps, screens, buttons, labels, or text that are not in it.
 
-Respond with ONLY a JSON object (no markdown, no code fences):
-{
-  "action": "action_name",
-  "params": {"key": "value"},
-  "reasoning": "why you chose this action",
-  "is_complete": false
-}
+OUTPUT: exactly one JSON object, no markdown, no prose, no extra keys:
+{"action":"<name>","params":{...},"reasoning":"<one short sentence>","is_complete":false}
 
-Available actions:
-- click_text: {"text": "exact text to click"} - Click an element by its visible text
-- click_at: {"x": 540, "y": 960} - Click at screen coordinates (use bounds from screen dump)
-- type_text: {"text": "hello", "field_hint": "optional hint"} - Type into the focused/first edit field
-- press_enter: {} - Press the Enter/Search key on the keyboard to submit a search/form
-- scroll: {"direction": "down"} - Scroll down/up on the current view
-- swipe: {"startX": 540, "startY": 2000, "endX": 540, "endY": 500} - Swipe from start to end coordinates (e.g. open app drawer, navigate carousels)
-- press_back: {} - Press the back button
-- press_home: {} - Press the home button
-- open_app: {"app_name": "WhatsApp"} - Open an app
-- wait: {} - Wait a moment for content to load
-- done: {} - Task is complete
+ACTIONS and exact params:
+- click_text {"text":"<exact label copied from the dump>"}
+- click_at {"x":<int>,"y":<int>} (only a center printed in the dump, never guessed)
+- type_text {"text":"<text>","field_hint":"<label of the input>"}
+- press_enter {}
+- scroll {"direction":"down|up"}
+- swipe {"startX":<int>,"startY":<int>,"endX":<int>,"endY":<int>}
+- press_back {}
+- press_home {}
+- open_app {"app_name":"<common display name, e.g. Rapido, Chrome, Google Maps>"}
+- wait {}
+- done {}
 
-Rules:
-- You will receive a TEXT DUMP of the accessibility tree containing exact text strings and center coordinates.
-- ALWAYS use the text dump to decide your next action.
-- If you need to click something, prefer using `click_text`. If the element does not have text, use `click_at` with the coordinates provided in the text dump.
-- When typing in a search box, you MUST click it first, wait a step, and THEN type.
-- After typing a search query, use `press_enter` once. If the screen does not change, click the exact visible suggestion text. Do not repeat the same submit action more than twice.
-- Never scroll or swipe more than three times in a row. After three scrolls, choose the best visible result or take a different action instead of continuing to browse indefinitely.
-- Set is_complete=true ONLY when the task is fully done.
-- If you need to find something by scrolling, scroll and then check the screen again.
-- If you need to open an app (like Wikipedia, Spotify, etc.) and you cannot find it after a couple of scrolls, ASSUME it is not installed. Immediately open Chrome or Google to search for the info on the web instead.
-- If stuck after 3 attempts, set is_complete=true and explain in reasoning.
-- Keep reasoning very brief (1 sentence)
-''';
+DECISION ORDER, first match wins:
+1. Goal already visible as complete -> done.
+2. Wanted label is visible -> click_text with that exact label.
+3. An input needs text -> click_text its label this step, type_text next step.
+4. Goal needs another app -> open_app with its display name.
+5. Wanted content is below the fold -> scroll once, then re-read the next dump.
+6. Wrong screen or a modal dialog -> press_back once. Never press_back from a results list, search screen, or destination/location picker; scroll or tap instead.
+
+HARD RULES:
+- One action per reply. Never chain actions. Never repeat the action that just failed.
+- click_text must copy a label exactly as shown. No label match -> click_at with a printed center. A missed click is never a reason to press back.
+- Never press_back on a results list, search screen, or destination list; only to close a modal dialog.
+- After typing, press_enter at most once. Then tap a visible suggestion or result instead of submitting again.
+- Never scroll more than twice in a row. After that, tap the best visible match or reopen the app.
+- Reasoning cites the visible evidence in one sentence. No plans, no narration.
+- done only when the goal is visibly complete. If two attempts fail, change element or strategy; do not loop.
+
+SEARCH FLOW (YouTube, Maps, any app):
+- type_text MUST include field_hint copied from the visible input label, e.g. "Search YouTube", "Search for a destination".
+- After typing, the app submits automatically. Never tap microphone, voice, lens, camera, or magnifier icons.
+- If the typed query is visible but results are not, press_enter once.
+- On a results screen, skip rows labeled Ad, Sponsored, Promoted, or showing a "Visit site" button. Tap the SECOND organic video/result; if the first row is an ad, tap the first organic row after it.
+- Prefer rows that show a duration (e.g. 3:45) and a channel name; those are videos, not ads.
+
+SCREEN FORMAT: `[id] type "label" [tap,edit,scroll] center:(x,y)`. `*` marks a likely goal match. `APP:` is the foreground package.''';
 
   /// Extract JSON safely even if wrapped in markdown or conversational text
   String _extractJson(String text) {
@@ -274,18 +280,22 @@ Rules:
 
       // Build failure hint if agent is stuck in a loop
       String failureHint = '';
-      if (consecutiveFailures >= 3) {
+      if (consecutiveFailures >= 2) {
         failureHint =
-            '\n\nWARNING: You have failed $consecutiveFailures times in a row with the same approach. You MUST try a completely different action. If open_app failed, try press_home and look for the app icon on the home screen instead. If click_text failed, use click_at with coordinates. Do NOT repeat the same failed action.';
+            '\n\nSTOP. The last $consecutiveFailures attempts failed and the '
+            'screen may not have changed. Choose a different visible element '
+            'or a different action. Do not repeat the same action.';
       }
 
       // 2. Build the prompt (system prompt is sent separately via sendTaskMessage)
       final prompt =
-          '''TASK: $userGoal
+          '''GOAL: $userGoal
+STEP: ${step + 1}/${_aiService.maxSteps}
 
-CURRENT SCREEN TEXT DUMP:
+SCREEN (only source of truth; pick one visible element):
 $screenContent$prevResultStr$failureHint
-Step ${step + 1}/${_aiService.maxSteps}. Look at the text dump and coordinates. What is the next action?''';
+
+Reply with the single next action JSON now.''';
 
       if (kDebugMode) {
         developer.log('=== AI PROMPT ===\n$prompt', name: 'PrivateAgent');
@@ -455,7 +465,9 @@ Step ${step + 1}/${_aiService.maxSteps}. Look at the text dump and coordinates. 
       sameActionCount = action == lastAction ? sameActionCount + 1 : 1;
       final repeatLimit = action == 'press_enter'
           ? 2
-          : (action == 'scroll' || action == 'swipe' ? 3 : 1000);
+          : (action == 'scroll' || action == 'swipe'
+                ? 3
+                : (action == 'press_back' ? 1 : 1000));
       if (sameActionCount > repeatLimit) {
         final blockedResult =
             'Blocked repeated $action action. Use a different action on the visible screen.';
@@ -476,6 +488,14 @@ Step ${step + 1}/${_aiService.maxSteps}. Look at the text dump and coordinates. 
         case 'click_text':
           final text = params['text'] as String? ?? '';
           success = await _screenService.clickByText(text);
+          if (!success) {
+            // Node matching can miss truncated or non-clickable labels; the
+            // dump still prints the row center, so tap that as a fallback.
+            final center = _centerForLabel(text, screenContent);
+            if (center != null) {
+              success = await _screenService.clickAt(center[0], center[1]);
+            }
+          }
           actionResult = success
               ? 'Clicked "$text"'
               : 'Could not find "$text" to click';
@@ -493,6 +513,15 @@ Step ${step + 1}/${_aiService.maxSteps}. Look at the text dump and coordinates. 
           final hint = params['field_hint'] as String?;
           success = await _screenService.typeText(text, fieldHint: hint);
           actionResult = success ? 'Typed "$text"' : 'Could not type text';
+          // Search fields submit immediately: this skips a model round trip and
+          // prevents the model from tapping the microphone or voice icons.
+          if (success && _isSearchField(hint)) {
+            await Future.delayed(const Duration(milliseconds: 180));
+            final submitted = await _submitKeyboardAction();
+            actionResult += submitted
+                ? ' and submitted the search'
+                : '; press_enter is required next';
+          }
           break;
 
         case 'press_enter':
@@ -678,6 +707,30 @@ Step ${step + 1}/${_aiService.maxSteps}. Look at the text dump and coordinates. 
   void _report(String message) {
     onProgress?.call(message);
   }
+
+  /// Finds the printed center of the first dump line containing [label].
+  List<double>? _centerForLabel(String label, String screenContent) {
+    var needle = label.replaceAll('...', '').replaceAll('…', '').toLowerCase();
+    needle = needle.trim().replaceAll('"', '').replaceAll("'", '');
+    if (needle.isEmpty) return null;
+    final centerPattern = RegExp(r'center:\((\d+),(\d+)\)');
+    for (final line in screenContent.split('\n')) {
+      if (!line.toLowerCase().contains(needle)) continue;
+      final match = centerPattern.firstMatch(line);
+      if (match == null) continue;
+      return [double.parse(match.group(1)!), double.parse(match.group(2)!)];
+    }
+    return null;
+  }
+
+  static final RegExp _searchHint = RegExp(
+    r'search|query|where to|destination|find|look up',
+    caseSensitive: false,
+  );
+
+  /// True when the typed field is a search box, so submitting is safe.
+  bool _isSearchField(String? hint) =>
+      hint != null && _searchHint.hasMatch(hint);
 
   Future<bool> _submitKeyboardAction() async {
     if (await _screenService.pressEnter()) return true;
