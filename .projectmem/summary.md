@@ -17,7 +17,6 @@ A new Flutter project.
 - Bridgy server reads OPENROUTER_API_KEY from server/.env only and hardcodes deepseek/deepseek-v4.1-flash-1017 in server/config.js. Ambient process env and client model fields are ignored; Node --env-file silently loses to exported vars, so no env-file launch is used. [server/config.js]
 
 ## Notes
-- New feature: feat: add on-device agent and policy wallet flow [android/app/src/main/kotlin/com/bridgy/bridgy/AccessibilityBridge.kt]
 - gotcha: AppShell builds all IndexedStack tabs eagerly, so AgentChatScreen._init starts a 3s accessibility MethodChannel timeout in widget tests. Mock channel com.bridgy.bridgy/accessibility and call SharedPreferences.setMockInitialValues in setUp. [test/widget_test.dart]
 - gotcha: adb-kt 1.0.0/1.0.13 on JitPack is compiled with Kotlin 2.4 metadata; this app uses Kotlin 2.2.20, so the dependency fails with 'incompatible version of Kotlin'. Upgrade Kotlin/KSP together before adding it. AccessibilityService remains the working on-device agent transport. [android/app/build.gradle.kts]
 - Unipay AI path: Flutter calls the Express proxy at /api/chat/completions; the proxy streams OpenRouter model deepseek/deepseek-v4.1-flash-1017 and keeps the key in gitignored server/.env. Start with npm start (node --env-file=.env). [server/index.js]
@@ -27,6 +26,7 @@ A new Flutter project.
 - gotcha: physical-phone builds need a reachable BRIDGY_AGENT_URL. New phone on 192.168.137.x could not reach Mac at 10.58.x, so the agent looped on network errors. Rebuilt with http://127.0.0.1:8787 plus `adb reverse tcp:8787 tcp:8787`. [android/app/build.gradle.kts]
 - New feature: feat: add Breezy 3D logo icon set [landing/index.html]
 - New feature: feat: finish Bridgy app shell, wallet store, and server config [android/app/src/main/kotlin/com/bridgy/bridgy/AgentAccessibilityService.kt]
+- Merge: chore: refresh project memory summary
 
 ## Key files
 - `.gitignore`
