@@ -25,6 +25,16 @@ class _UpiCheckoutScreenState extends State<UpiCheckoutScreen> {
   String get link => widget.link;
 
   @override
+  void initState() {
+    super.initState();
+    // A cold start from a upi://pay link may never mount AppShell, so load the
+    // policy here before evaluating the amount.
+    if (PolicyController.instance.syncStatus == 'not loaded') {
+      PolicyController.instance.load();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final intent = UpiIntent.parse(link);
     if (intent == null) {
@@ -37,79 +47,102 @@ class _UpiCheckoutScreenState extends State<UpiCheckoutScreen> {
       );
     }
 
-    final controller = PolicyController.instance;
-    final decision = controller.evaluate(intent.amountInr);
+    return ListenableBuilder(
+      listenable: PolicyController.instance,
+      builder: (context, _) {
+        final controller = PolicyController.instance;
+        if (controller.syncStatus == 'not loaded') {
+          return _scaffold(
+            context,
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (controller.error != null) {
+          return _scaffold(
+            context,
+            body: Text(
+              'Policy unavailable: ${controller.error}',
+              style: uiStyle(size: 13, color: AppColors.negative, height: 1.4),
+            ),
+          );
+        }
+        final decision = controller.evaluate(intent.amountInr);
 
-    return _scaffold(
-      context,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+        return _scaffold(
+          context,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Row(
+                children: [
+                  Text(
+                    'Pay with Bridgy',
+                    style: displayStyle(size: 26, spacing: -1),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.gold.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.gold.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Text(
+                      'ERC-4337',
+                      style: uiStyle(
+                        size: 11,
+                        weight: FontWeight.w700,
+                        color: AppColors.goldText,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
               Text(
-                'Pay with Bridgy',
-                style: displayStyle(size: 26, spacing: -1),
+                intent.merchantName,
+                style: uiStyle(size: 13, color: AppColors.muted),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '₹${intent.amountInr.toStringAsFixed(2)}',
+                style: displayStyle(size: 44, spacing: -2),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                intent.merchantVpa,
+                style: uiStyle(size: 12, color: AppColors.muted),
+              ),
+              if (intent.note.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  intent.note,
+                  style: uiStyle(size: 12, color: AppColors.muted),
+                ),
+              ],
+              const SizedBox(height: 22),
+              InkWell(
+                onTap: decision == PolicyDecision.reject
+                    ? () => _showBlockedDialog(
+                        context,
+                        amountInr: intent.amountInr,
+                        remainingInr: controller.policy.remainingTodayInr,
+                      )
+                    : null,
+                borderRadius: BorderRadius.circular(22),
+                child: _decisionCard(decision, intent.amountInr, controller),
               ),
               const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.gold.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppColors.gold.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Text(
-                  'ERC-4337',
-                  style: uiStyle(
-                    size: 11,
-                    weight: FontWeight.w700,
-                    color: AppColors.goldText,
-                  ),
-                ),
-              ),
+              _action(context, decision, intent, controller),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            intent.merchantName,
-            style: uiStyle(size: 13, color: AppColors.muted),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            '₹${intent.amountInr.toStringAsFixed(2)}',
-            style: displayStyle(size: 44, spacing: -2),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            intent.merchantVpa,
-            style: uiStyle(size: 12, color: AppColors.muted),
-          ),
-          if (intent.note.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(intent.note, style: uiStyle(size: 12, color: AppColors.muted)),
-          ],
-          const SizedBox(height: 22),
-          InkWell(
-            onTap: decision == PolicyDecision.reject
-                ? () => _showBlockedDialog(
-                    context,
-                    amountInr: intent.amountInr,
-                    remainingInr: controller.policy.remainingTodayInr,
-                  )
-                : null,
-            borderRadius: BorderRadius.circular(22),
-            child: _decisionCard(decision, intent.amountInr, controller),
-          ),
-          const Spacer(),
-          _action(context, decision, intent, controller),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -121,7 +154,7 @@ class _UpiCheckoutScreenState extends State<UpiCheckoutScreen> {
     final (title, detail, color) = switch (decision) {
       PolicyDecision.allow => (
         'Within policy',
-        'The AI agent session key can authorize and sign this transaction autonomously without you.',
+        'The backend policy allows this payment without extra approval.',
         AppColors.goldText,
       ),
       PolicyDecision.ownerApproval => (
@@ -377,7 +410,7 @@ class _UpiCheckoutScreenState extends State<UpiCheckoutScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Payment Settled!',
+              'Payment recorded',
               style: displayStyle(size: 22, spacing: -0.6),
             ),
             const SizedBox(height: 6),
@@ -407,7 +440,7 @@ class _UpiCheckoutScreenState extends State<UpiCheckoutScreen> {
                         style: uiStyle(size: 11.5, color: AppColors.muted),
                       ),
                       Text(
-                        'Bridgy UPI Vault (INR)',
+                        'Bridgy ledger (INR)',
                         style: uiStyle(size: 11.5, weight: FontWeight.w700),
                       ),
                     ],

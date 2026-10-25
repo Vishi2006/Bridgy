@@ -38,7 +38,7 @@ Widget _app({
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    await WalletStore.instance.reset();
+    WalletStore.instance.clear();
   });
 
   testWidgets('preset buttons fill the amount field', (tester) async {

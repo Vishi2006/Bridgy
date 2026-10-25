@@ -56,12 +56,19 @@ let ownerKey = process.env.OWNER_PRIVATE_KEY?.trim();
 if (ownerKey && !ownerKey.startsWith('0x') && ownerKey.length === 64) {
   ownerKey = `0x${ownerKey}`;
 }
-if (!ownerKey || !ownerKey.startsWith('0x') || ownerKey.length !== 66) {
-  console.log('[Bridgy Wallet] ℹ️ Generating ephemeral owner key (or invalid key format in .env)');
-  ownerKey = generatePrivateKey();
+
+// Never invent an owner key. An ephemeral address would receive testnet funds
+// that nobody can recover after the next cold start.
+export let ownerAccount = null;
+if (ownerKey && ownerKey.startsWith('0x') && ownerKey.length === 66) {
+  ownerAccount = privateKeyToAccount(ownerKey);
+  walletState.ownerAddress = ownerAccount.address;
+} else {
+  console.warn(
+    '[Bridgy Wallet] OWNER_PRIVATE_KEY missing or invalid; on-chain receive is disabled.',
+  );
+  walletState.ownerAddress = null;
 }
-export const ownerAccount = privateKeyToAccount(ownerKey);
-walletState.ownerAddress = ownerAccount.address;
 
 // Setup Agent Key (Session Key for Express & DeepSeek AI)
 export const agentPrivateKey = generatePrivateKey();
@@ -75,6 +82,12 @@ let kernelClientInstance = null;
  * Initialize the ZeroDev ERC-4337 Kernel Account
  */
 export async function initSmartAccount() {
+  if (!ownerAccount) {
+    console.warn('[Bridgy Wallet] No owner key; skipping smart account init.');
+    walletState.isLive = false;
+    return walletState;
+  }
+
   if (!ZERODEV_PROJECT_ID) {
     console.log('[Bridgy Wallet] ℹ️ ZERODEV_PROJECT_ID not set. Running in resilient mock demonstration mode.');
     walletState.smartAccountAddress = '0x88F7c64a8523A9C830Da4c1F3235b62b66eCe4eA';

@@ -161,6 +161,44 @@ test('creditTopUp reports a database failure instead of pretending success', asy
   });
 });
 
+test('getBalance treats yesterday spend as zero for today', async () => {
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const ledger = createLedger(
+    client({
+      selectResult: {
+        data: { ...walletRow, spent_on: yesterday, spent_today_inr: '500' },
+      },
+    }),
+  );
+  const balance = await ledger.getBalance('u1');
+  assert.equal(balance.spentTodayInr, 0);
+});
+
+test('debit maps the daily cap SQL error to HTTP 402', async () => {
+  const ledger = createLedger(
+    client({
+      rpcResult: async () => ({
+        error: { message: 'daily limit exceeded', code: 'P0001' },
+      }),
+    }),
+  );
+
+  await assert.rejects(
+    ledger.debit('u1', {
+      amountInr: 100,
+      merchantName: 'Shop',
+      merchantVpa: 'shop@upi',
+      status: 'AGENT_PAID',
+      dailyLimitInr: 500,
+    }),
+    (err) => {
+      assert.equal(err.status, 402);
+      assert.equal(err.code, 'DAILY_LIMIT_EXCEEDED');
+      return true;
+    },
+  );
+});
+
 test('debit maps insufficient balance to HTTP 409', async () => {
   const ledger = createLedger(
     client({

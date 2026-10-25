@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../icons.dart';
 import '../services/backend.dart';
+import '../state/policy_controller.dart';
 import '../state/wallet_store.dart';
 import '../theme.dart';
 import '../unipay.dart';
+import 'policy_screen.dart';
 import 'send_money_screen.dart';
 import 'top_up_screen.dart';
 
@@ -50,6 +53,19 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (WalletStore.instance.transactions.isEmpty)
+                      Container(
+                        key: const Key('activity-empty'),
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'No activity yet. Top up to get started.',
+                          style: uText(size: 13, color: U.grey),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -294,9 +310,9 @@ class _HeaderState extends State<_Header> with WidgetsBindingObserver {
             listenable: WalletStore.instance,
             builder: (context, _) => Column(
               children: [
-                const Row(
+                Row(
                   children: [
-                    Text(
+                    const Text(
                       'BRIDGY',
                       style: TextStyle(
                         fontFamily: UF.sans,
@@ -306,8 +322,22 @@ class _HeaderState extends State<_Header> with WidgetsBindingObserver {
                         color: Color(0x99FFFFFF),
                       ),
                     ),
-                    Spacer(),
-                    _AccountChip(),
+                    const Spacer(),
+                    IconButton(
+                      key: const Key('open-policy'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const PolicyScreen(),
+                        ),
+                      ),
+                      icon: const AppIcon(
+                        Icons8.shieldCheck,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                      tooltip: 'Policy',
+                    ),
+                    const _AccountChip(),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -330,7 +360,13 @@ class _HeaderState extends State<_Header> with WidgetsBindingObserver {
                       child: _action(
                         'Withdraw',
                         UArt.arrowUpRight,
-                        () => _moneySheet(context, withdraw: true),
+                        () => ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Withdrawals need a payout rail and are not enabled.',
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -601,101 +637,6 @@ class _HeaderState extends State<_Header> with WidgetsBindingObserver {
       ),
     );
   }
-
-  void _moneySheet(BuildContext context, {required bool withdraw}) {
-    final controller = TextEditingController(text: '100');
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: U.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheet) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          14,
-          24,
-          24 + MediaQuery.of(sheet).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: U.line,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              withdraw ? 'Withdraw' : 'Deposit',
-              style: uText(size: 24, weight: FontWeight.w700, spacing: -0.6),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              withdraw
-                  ? 'Move money to your linked bank.'
-                  : 'Add money from your linked bank.',
-              style: uText(size: 13, color: U.grey),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: controller,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              style: uText(size: 28, weight: FontWeight.w700),
-              decoration: InputDecoration(
-                prefixText: '₹ ',
-                prefixStyle: uText(size: 28, weight: FontWeight.w700),
-                filled: true,
-                fillColor: U.bg,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: U.dark,
-                minimumSize: const Size.fromHeight(52),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              onPressed: () async {
-                final value = double.tryParse(controller.text) ?? 0;
-                if (value <= 0) return;
-                await WalletStore.instance.apply(
-                  amount: withdraw ? -value : value,
-                  title: withdraw ? 'Withdrawal' : 'Deposit',
-                  subtitle: 'Just now',
-                  kind: withdraw ? 'withdraw' : 'deposit',
-                );
-                if (sheet.mounted) Navigator.pop(sheet);
-              },
-              child: Text(
-                withdraw ? 'Withdraw' : 'Deposit',
-                style: uText(
-                  size: 15,
-                  weight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _ActivityRow extends StatelessWidget {
@@ -914,6 +855,8 @@ class _AccountChip extends StatelessWidget {
                   onPressed: () async {
                     Navigator.of(sheetContext).pop();
                     await BridgyBackend.signOut();
+                    WalletStore.instance.clear();
+                    PolicyController.instance.reset();
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.dark,

@@ -425,6 +425,22 @@ app.post('/api/terminal-logs', async (req, res) => {
 
 // ── Authenticated Wallet & Top-Up Endpoints ─────────────────────────────────
 
+// Merchant payouts need a payout provider (RazorpayX / Cashfree Payouts) and
+// KYC. Until that exists, never debit a user's real balance for a merchant
+// payment. The route returns 503 instead of pretending the merchant was paid.
+const MERCHANT_SETTLEMENT_READY =
+  process.env.MERCHANT_SETTLEMENT_READY === 'true';
+
+function requireSettlement(res) {
+  if (MERCHANT_SETTLEMENT_READY) return true;
+  res.status(503).json({
+    error:
+      'Merchant settlement is not configured. A payout rail is required before Bridgy can pay a merchant from your balance.',
+    code: 'SETTLEMENT_NOT_CONFIGURED',
+  });
+  return false;
+}
+
 function expirySeconds(value) {
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
@@ -469,6 +485,13 @@ app.get('/api/wallet/balance', auth, async (req, res) => {
 // 2b. On-chain Base Sepolia address and balance (MetaMask).
 app.get('/api/wallet/onchain', auth, async (_req, res) => {
   try {
+    if (!ownerAccount) {
+      return res.status(503).json({
+        error:
+          'OWNER_PRIVATE_KEY is not configured on the backend, so no Base Sepolia address exists.',
+        code: 'ONCHAIN_KEY_NOT_CONFIGURED',
+      });
+    }
     const address = ownerAccount.address;
     const wei = await publicClient.getBalance({ address });
     return res.json({
@@ -535,7 +558,13 @@ app.get('/api/wallet/topup/:id', auth, async (req, res) => {
   try {
     const topup = await ledger.getTopUp(req.user.id, req.params.id);
     if (topup.status !== 'PENDING') {
-      return res.json(topup);
+      // A webhook can mark PAID before the next poll. Include the balance so
+      // the app does not treat a paid top-up as an error.
+      const balanceInr =
+        topup.status === 'PAID'
+          ? (await ledger.getBalance(req.user.id)).balanceInr
+          : null;
+      return res.json({ ...topup, balanceInr });
     }
     if (!topup.providerOrderId) {
       throw new LedgerError('Top-up has no provider order', {
@@ -579,19 +608,20 @@ app.post('/api/wallet/razorpay/webhook', async (req, res) => {
     }
 
     const event = req.body?.event;
-    const linkId = req.body?.payload?.payment_link?.entity?.id;
+    const paymentEntity = req.body?.payload?.payment?.entity;
+    const linkId =
+      req.body?.payload?.payment_link?.entity?.id ||
+      paymentEntity?.payment_link_id;
     if (!linkId) {
-      return res.status(400).json({
-        error: 'Webhook has no payment_link id',
-        code: 'INVALID_WEBHOOK',
-      });
+      // payment.captured does not always carry a payment_link id. Acknowledge
+      // it so Razorpay does not retry or disable the webhook.
+      return res.json({ ok: true, ignored: event || 'unknown' });
     }
 
     const topup = await ledger.findTopUpByOrderId(linkId);
 
     if (event === 'payment_link.paid' || event === 'payment.captured') {
-      const paymentId =
-        req.body?.payload?.payment?.entity?.id || `link_${linkId}`;
+      const paymentId = paymentEntity?.id || `link_${linkId}`;
       const credit = await ledger.creditTopUp(topup.id, paymentId);
       return res.json({ ok: true, ...credit });
     }
@@ -614,6 +644,7 @@ app.post('/api/wallet/razorpay/webhook', async (req, res) => {
 
 // 7. Agent payment: policy checks then an atomic debit.
 app.post('/api/wallet/pay-agent', auth, async (req, res) => {
+  if (!requireSettlement(res)) return;
   const { amountInr, merchantName, merchantVpa } = req.body ?? {};
   try {
     const amount = Number(amountInr);
@@ -650,6 +681,8 @@ app.post('/api/wallet/pay-agent', auth, async (req, res) => {
       merchantName: merchantName || 'Quick Commerce Merchant',
       merchantVpa: merchantVpa || 'merchant@upi',
       status: 'AGENT_PAID',
+      perTxLimitInr: wallet.perTxLimitInr,
+      dailyLimitInr: wallet.dailyLimitInr,
     });
 
     return res.json({
@@ -665,6 +698,7 @@ app.post('/api/wallet/pay-agent', auth, async (req, res) => {
 
 // 8. Owner payment: skips the policy caps, still needs balance.
 app.post('/api/wallet/pay-owner', auth, async (req, res) => {
+  if (!requireSettlement(res)) return;
   const { amountInr, merchantName, merchantVpa, biometricApproved } =
     req.body ?? {};
   try {
@@ -970,13 +1004,7 @@ app.get('/dashboard', (_req, res) => {
         </div>
       </div>
 
-      <!-- Quick Test Buttons for Judges -->
-      <div class="actions-bar">
-        <button class="btn btn-gold" onclick="testPay(140)">⚡ Test ₹140 (Autonomous Pay)</button>
-        <button class="btn btn-outline" onclick="testPay(350)">🔒 Test ₹350 (Trigger Policy Block)</button>
-        <button class="btn btn-outline" onclick="renewSession()">⏳ Renew Session (+24h)</button>
-      </div>
-      <div id="test-result" style="margin-top: 12px; font-size: 13px; font-weight: 600;"></div>
+
     </div>
 
     <!-- Live Transaction History -->
@@ -998,7 +1026,7 @@ app.get('/dashboard', (_req, res) => {
           </thead>
           <tbody>
             ${walletState.transactions.length === 0
-              ? `<tr><td colspan="6" style="text-align: center; color: #8A8578; padding: 28px; font-size: 13px;">No transactions recorded yet. Live checkouts from your mobile app or the test buttons above will appear here in real-time.</td></tr>`
+              ? `<tr><td colspan="6" style="text-align: center; color: #8A8578; padding: 28px; font-size: 13px;">No transactions recorded yet. Live checkouts from your mobile app will appear here in real time.</td></tr>`
               : walletState.transactions
                   .map(
                     (t) => `
@@ -1019,41 +1047,6 @@ app.get('/dashboard', (_req, res) => {
     </div>
   </div>
 
-  <script>
-    async function testPay(amount) {
-      const resEl = document.getElementById('test-result');
-      resEl.textContent = 'Submitting test UserOp for ₹' + amount + '...';
-      resEl.style.color = '#8A8578';
-
-      try {
-        const res = await fetch('/api/wallet/pay-agent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amountInr: amount, merchantName: 'Judge Demo Merchant', merchantVpa: 'demo@icici' })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          resEl.textContent = '✅ SUCCESS: Autonomous payment of ₹' + amount + ' approved by session key policy!';
-          resEl.style.color = '#15803D';
-          setTimeout(() => window.location.reload(), 1400);
-        } else {
-          resEl.textContent = '🛡️ BLOCKED AS DESIGNED: ' + data.error;
-          resEl.style.color = '#B45309';
-        }
-      } catch (err) {
-        resEl.textContent = 'Error: ' + err.message;
-        resEl.style.color = '#DC2626';
-      }
-    }
-
-    async function renewSession() {
-      const res = await fetch('/api/wallet/renew-session', { method: 'POST' });
-      if (res.ok) {
-        alert('Session key renewed for +24 hours!');
-        window.location.reload();
-      }
-    }
-  </script>
 </body>
 </html>`);
 });

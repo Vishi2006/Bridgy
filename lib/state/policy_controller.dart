@@ -92,6 +92,19 @@ class PolicyController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears local state on sign-out so the next user never sees it.
+  void reset() {
+    perTxLimitInr = 200;
+    dailyLimitInr = 500;
+    spentTodayInr = 0;
+    expiresAt = DateTime.fromMillisecondsSinceEpoch(0);
+    smartWalletAddress = 'pending';
+    isSmartAccountLive = false;
+    syncStatus = 'not loaded';
+    error = null;
+    notifyListeners();
+  }
+
   void _apply(WalletStatus status) {
     perTxLimitInr = status.perTxLimitInr;
     dailyLimitInr = status.dailyLimitInr;

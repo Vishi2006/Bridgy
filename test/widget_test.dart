@@ -63,11 +63,11 @@ void main() {
     expect(find.text('Notification'), findsOneWidget);
     expect(find.text('Donate for Ukraine'), findsOneWidget);
     expect(find.text('Recent Activity'), findsOneWidget);
-    expect(find.text('Dribbble'), findsOneWidget);
-    expect(find.text('Mailchimp'), findsOneWidget);
+    expect(find.byKey(const Key('activity-empty')), findsOneWidget);
     expect(find.byKey(const Key('nav-home')), findsOneWidget);
     expect(find.byKey(const Key('nav-plus')), findsOneWidget);
     expect(find.byKey(const Key('nav-agent')), findsOneWidget);
+    expect(find.byKey(const Key('open-policy')), findsOneWidget);
   });
 
   testWidgets('plus opens Send Money and keypad updates the amount', (
@@ -97,6 +97,24 @@ void main() {
     expect(find.text('Notification'), findsOneWidget);
   });
 
+  testWidgets('send never shows success without a backend response', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MyApp());
+    await tapAndSettle(tester, find.byKey(const Key('nav-plus')));
+
+    await tester.tap(find.text('5'));
+    await tester.tap(find.text('0'));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('send-confirm-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('send-error')), findsOneWidget);
+    expect(find.textContaining('Sign in required'), findsOneWidget);
+  });
+
   testWidgets('agent glyph opens the agent window', (tester) async {
     await tester.pumpWidget(const MyApp());
     await tapAndSettle(tester, find.byKey(const Key('nav-agent')));
@@ -107,7 +125,9 @@ void main() {
     expect(find.byKey(const Key('nav-home')), findsOneWidget);
   });
 
-  testWidgets('agent composer accepts text without the network', (tester) async {
+  testWidgets('agent composer accepts text without the network', (
+    tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
     await tapAndSettle(tester, find.byKey(const Key('nav-agent')));
 

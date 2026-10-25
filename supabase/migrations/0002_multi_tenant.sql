@@ -23,12 +23,18 @@ revoke insert, update, delete on public.wallets from authenticated;
 revoke insert, update, delete on public.transactions from authenticated;
 revoke insert, update, delete on public.topups from authenticated;
 
--- 2. Drop the single-wallet demo rows.
+-- 2. Ensure the wallet foreign keys exist on databases created before 0000.
+alter table public.transactions
+  add column if not exists wallet_id uuid references public.wallets(id) on delete cascade;
+alter table public.topups
+  add column if not exists wallet_id uuid references public.wallets(id) on delete cascade;
+
+-- 3. Drop the single-wallet demo rows.
 delete from public.topups;
 delete from public.transactions;
 delete from public.wallets;
 
--- 3. Owner columns.
+-- 4. Owner columns.
 alter table public.wallets
   add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table public.wallets alter column owner_id set not null;
@@ -46,7 +52,7 @@ alter table public.topups alter column owner_id set not null;
 create index if not exists topups_owner_created_idx
   on public.topups (owner_id, created_at desc);
 
--- 4. PSP columns. Razorpay payment links are the default rail.
+-- 5. PSP columns. Razorpay payment links are the default rail.
 alter table public.topups
   add column if not exists provider text not null default 'razorpay';
 alter table public.topups
@@ -71,7 +77,7 @@ create unique index if not exists topups_provider_payment_unique
   on public.topups (provider_payment_id)
   where provider_payment_id is not null;
 
--- 5. Owner-scoped reads.
+-- 6. Owner-scoped reads.
 alter table public.wallets enable row level security;
 alter table public.transactions enable row level security;
 alter table public.topups enable row level security;
@@ -95,7 +101,7 @@ grant all on public.wallets to service_role;
 grant all on public.transactions to service_role;
 grant all on public.topups to service_role;
 
--- 6. New users get a profile and an empty wallet in one trigger.
+-- 7. New users get a profile and an empty wallet in one trigger.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -115,12 +121,12 @@ begin
 end;
 $$;
 
--- 7. Backfill wallets for users created before this migration.
+-- 8. Backfill wallets for users created before this migration.
 insert into public.wallets (owner_id)
 select u.id from auth.users u
 on conflict (owner_id) do nothing;
 
--- 8. Atomic, idempotent credit. Service role only.
+-- 9. Atomic, idempotent credit. Service role only.
 drop function if exists public.wallet_topup(numeric);
 
 create or replace function public.credit_topup(

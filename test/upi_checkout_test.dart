@@ -31,13 +31,18 @@ void main() {
 
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
-    binding.platformDispatcher.views.first.physicalSize = const Size(1170, 2532);
+    binding.platformDispatcher.views.first.physicalSize = const Size(
+      1170,
+      2532,
+    );
     binding.platformDispatcher.views.first.devicePixelRatio = 3;
     PolicyController.instance
       ..perTxLimitInr = 200
       ..dailyLimitInr = 500
       ..spentTodayInr = 0
-      ..expiresAt = DateTime.now().add(const Duration(hours: 24));
+      ..expiresAt = DateTime.now().add(const Duration(hours: 24))
+      ..syncStatus = 'synced (test)'
+      ..error = null;
   });
 
   tearDown(() {
@@ -87,12 +92,25 @@ void main() {
 
   testWidgets('blocks an amount above the daily budget', (tester) async {
     PolicyController.instance.spentTodayInr = 480;
-    await tester.pumpWidget(
-      app('upi://pay?pa=zepto@axisbank&pn=Zepto&am=100'),
-    );
+    await tester.pumpWidget(app('upi://pay?pa=zepto@axisbank&pn=Zepto&am=100'));
 
     expect(find.text('Blocked by policy (Low Budget)'), findsOneWidget);
     expect(find.text('Payment blocked'), findsOneWidget);
+  });
+
+  testWidgets('cold start surfaces a policy load error instead of blocking', (
+    tester,
+  ) async {
+    PolicyController.instance
+      ..syncStatus = 'not loaded'
+      ..error = null;
+
+    await tester.pumpWidget(
+      app('upi://pay?pa=blinkit@axisbank&pn=Blinkit&am=150'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Policy unavailable'), findsOneWidget);
   });
 
   testWidgets('rejects a malformed link', (tester) async {

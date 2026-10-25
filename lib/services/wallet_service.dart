@@ -99,7 +99,9 @@ class WalletService {
   @visibleForTesting
   static String? tokenOverride;
 
-  static http.Client get _client => clientOverride ?? http.Client();
+  static final http.Client _sharedClient = http.Client();
+
+  static http.Client get _client => clientOverride ?? _sharedClient;
 
   static Future<Map<String, String>> _headers() async {
     final token = tokenOverride ?? BridgyBackend.accessToken;

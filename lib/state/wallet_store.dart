@@ -1,16 +1,17 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/wallet_service.dart';
 
 class WalletTx {
   const WalletTx({
+    required this.id,
     required this.title,
     required this.subtitle,
     required this.amount,
     required this.kind,
   });
 
+  final String id;
   final String title;
   final String subtitle;
   final double amount;
@@ -25,20 +26,7 @@ class WalletStore extends ChangeNotifier {
   double _balance = 0;
   bool _loaded = false;
   String? _error;
-  final List<WalletTx> _transactions = [
-    const WalletTx(
-      title: 'Dribbble',
-      subtitle: '12 February 2023',
-      amount: -15.00,
-      kind: 'dribbble',
-    ),
-    const WalletTx(
-      title: 'Mailchimp',
-      subtitle: '02 March 2023',
-      amount: -350.00,
-      kind: 'mailchimp',
-    ),
-  ];
+  List<WalletTx> _transactions = const [];
 
   double get balance => _balance;
   List<WalletTx> get transactions => List.unmodifiable(_transactions);
@@ -64,24 +52,25 @@ class WalletStore extends ChangeNotifier {
 
   String get balanceText => '$balanceWhole$balanceFraction';
 
-  /// Reads the authoritative balance from the backend ledger.
+  /// Reads the authoritative balance and ledger rows from the backend.
   ///
   /// The error is stored verbatim so the home card can display it. There is no
-  /// local balance to fall back to.
+  /// local balance or seeded transaction list to fall back to.
   Future<void> refresh() async {
     try {
-      _balance = await WalletService.getBalance();
+      final balance = await WalletService.getBalance();
+      final rows = await WalletService.getTransactions();
+      _balance = balance;
       _loaded = true;
       _error = null;
+      _transactions = rows.map(_mapTransaction).toList(growable: false);
     } on Exception catch (error) {
       _error = error.toString();
     }
     notifyListeners();
   }
 
-  Future<void> load() => refresh();
-
-  /// Applies the balance returned by a confirmed top-up, plus its ledger row.
+  /// Applies the balance returned by a confirmed top-up, then reloads history.
   Future<void> applyTopUp({
     required double amountInr,
     required double balanceInr,
@@ -89,56 +78,50 @@ class WalletStore extends ChangeNotifier {
     _balance = balanceInr;
     _loaded = true;
     _error = null;
-    _transactions.insert(
-      0,
-      WalletTx(
-        title: 'Wallet top-up',
-        subtitle: 'Just now',
-        amount: amountInr,
-        kind: 'topup',
-      ),
-    );
     notifyListeners();
+    await refresh();
   }
 
-  Future<void> apply({
-    required double amount,
-    required String title,
-    required String subtitle,
-    required String kind,
-  }) async {
-    final next = _balance + amount;
-    if (next < 0) return;
-    _balance = next;
-    _transactions.insert(
-      0,
-      WalletTx(title: title, subtitle: subtitle, amount: amount, kind: kind),
-    );
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('unipay_balance', _balance);
-  }
-
-  Future<void> reset() async {
+  /// Clears all user data on sign-out.
+  void clear() {
     _balance = 0;
     _loaded = false;
     _error = null;
-    _transactions
-      ..clear()
-      ..addAll(const [
-        WalletTx(
-          title: 'Dribbble',
-          subtitle: '12 February 2023',
-          amount: -15.00,
-          kind: 'dribbble',
-        ),
-        WalletTx(
-          title: 'Mailchimp',
-          subtitle: '02 March 2023',
-          amount: -350.00,
-          kind: 'mailchimp',
-        ),
-      ]);
+    _transactions = const [];
     notifyListeners();
+  }
+
+  WalletTx _mapTransaction(Map<String, dynamic> row) {
+    final status = '${row['status'] ?? ''}';
+    final merchant = '${row['merchantName'] ?? 'Transaction'}';
+    final amount = (row['amountInr'] as num?)?.toDouble() ?? 0;
+    final createdAt = DateTime.tryParse('${row['createdAt'] ?? ''}');
+    return WalletTx(
+      id: '${row['id'] ?? ''}',
+      title: merchant,
+      subtitle: _formatDate(createdAt) ?? 'Just now',
+      amount: status == 'TOPUP' ? amount : -amount,
+      kind: status.toLowerCase(),
+    );
+  }
+
+  String? _formatDate(DateTime? value) {
+    if (value == null) return null;
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    final local = value.toLocal();
+    return '${local.day} ${months[local.month - 1]} ${local.year}';
   }
 }

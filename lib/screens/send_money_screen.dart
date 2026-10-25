@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../services/wallet_service.dart';
 import '../state/wallet_store.dart';
 import '../unipay.dart';
 
 class SendMoneyScreen extends StatefulWidget {
-  const SendMoneyScreen({
-    super.key,
-    this.donate = true,
-    required this.onSent,
-  });
+  const SendMoneyScreen({super.key, this.donate = true, required this.onSent});
 
   final bool donate;
   final VoidCallback onSent;
@@ -98,7 +95,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '\$${amount.toStringAsFixed(2)} to Donate for Ukraine',
+              '₹${amount.toStringAsFixed(2)} to Donate for Ukraine',
               style: uText(size: 13, color: U.grey),
             ),
             const SizedBox(height: 22),
@@ -129,21 +126,49 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await WalletStore.instance.apply(
-      amount: -amount,
-      title: 'Donate for Ukraine',
-      subtitle: 'Just now',
-      kind: 'donation',
-    );
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const _SuccessDialog(),
-    );
-    if (!mounted) return;
-    widget.onSent();
-    Navigator.of(context).pop();
+    try {
+      await WalletService.payWithOwner(
+        amountInr: amount,
+        merchantName: 'Donate for Ukraine',
+        merchantVpa: 'donate@bridgy',
+      );
+      await WalletStore.instance.refresh();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _SuccessDialog(),
+      );
+      if (!mounted) return;
+      widget.onSent();
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: U.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Text(
+            'Payment failed',
+            style: uText(size: 18, weight: FontWeight.w700),
+          ),
+          content: Text(
+            error.toString(),
+            key: const Key('send-error'),
+            style: uText(size: 13, color: U.grey, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _toast(String text) {
@@ -202,7 +227,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
                           textBaseline: TextBaseline.alphabetic,
                           children: [
                             Text(
-                              '\$',
+                              '₹',
                               style: uText(
                                 size: 30,
                                 weight: FontWeight.w500,
@@ -423,9 +448,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
                       Expanded(
                         child: _key(
                           key,
-                          onTap: key == '<'
-                              ? _backspace
-                              : () => _pressKey(key),
+                          onTap: key == '<' ? _backspace : () => _pressKey(key),
                         ),
                       ),
                   ],

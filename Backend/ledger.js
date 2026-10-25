@@ -12,6 +12,12 @@ export class LedgerError extends Error {
   }
 }
 
+function effectiveSpentToday(row) {
+  const today = new Date().toISOString().slice(0, 10);
+  const spentOn = row.spent_on ? String(row.spent_on).slice(0, 10) : today;
+  return spentOn === today ? Number(row.spent_today_inr) : 0;
+}
+
 function mapWallet(row) {
   return {
     id: row.id,
@@ -20,7 +26,7 @@ function mapWallet(row) {
     balanceInr: Number(row.balance_inr),
     perTxLimitInr: Number(row.per_tx_limit_inr),
     dailyLimitInr: Number(row.daily_limit_inr),
-    spentTodayInr: Number(row.spent_today_inr),
+    spentTodayInr: effectiveSpentToday(row),
     policyExpiry: row.policy_expiry,
   };
 }
@@ -83,7 +89,7 @@ export function createLedger(supabase) {
       balanceInr: Number(wallet.balance_inr),
       perTxLimitInr: Number(wallet.per_tx_limit_inr),
       dailyLimitInr: Number(wallet.daily_limit_inr),
-      spentTodayInr: Number(wallet.spent_today_inr),
+      spentTodayInr: effectiveSpentToday(wallet),
       policyExpiry: wallet.policy_expiry,
     };
   }
@@ -330,7 +336,17 @@ export function createLedger(supabase) {
     return data ? mapTopUp(data) : null;
   }
 
-  async function debit(ownerId, { amountInr, merchantName, merchantVpa, status }) {
+  async function debit(
+    ownerId,
+    {
+      amountInr,
+      merchantName,
+      merchantVpa,
+      status,
+      perTxLimitInr = null,
+      dailyLimitInr = null,
+    },
+  ) {
     const amount = positiveAmount(amountInr);
     const { data, error } = await supabase.rpc('debit_wallet', {
       p_owner_id: ownerId,
@@ -338,9 +354,18 @@ export function createLedger(supabase) {
       p_merchant: merchantName,
       p_vpa: merchantVpa,
       p_status: status,
+      p_per_tx_limit: perTxLimitInr,
+      p_daily_limit: dailyLimitInr,
     });
 
     if (error) {
+      if (error.code === 'P0001') {
+        const daily = /daily/i.test(error.message);
+        throw new LedgerError(error.message, {
+          status: 402,
+          code: daily ? 'DAILY_LIMIT_EXCEEDED' : 'OWNER_APPROVAL_REQUIRED',
+        });
+      }
       throw new LedgerError(error.message, {
         status: error.code === '22003' ? 409 : 502,
         code: error.code || 'PAYMENT_FAILED',

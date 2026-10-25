@@ -61,7 +61,7 @@ The network can be slow. The demo path can replay a calibrated tap sequence with
 
 | Surface | State |
 | --- | --- |
-| Wallet UI and send flow | Built; balance and history come from the backend ledger |
+| Wallet UI and send flow | Built; balance and history come from the backend ledger. Send/withdraw return `SETTLEMENT_NOT_CONFIGURED` until a payout rail exists |
 | Auth | Email/password, magic link, and Google button; Google needs its OAuth secret |
 | Top-up | Razorpay payment links with signed webhook; needs merchant keys |
 | Floating HUD | Built; started from `AgentScreen` |
@@ -195,7 +195,9 @@ The defaults are ₹200 per transaction, ₹500 per day, and a 24-hour expiry. T
 
 `UpiCheckoutScreen` renders the decision: within policy, owner approval, or blocked. The owner sheet confirms, then `POST /api/wallet/pay-owner` debits the user's ledger balance atomically. `POST /api/wallet/pay-agent` enforces the per-tx cap, daily cap, expiry, and balance before it debits. This screen is tested in `test/upi_checkout_test.dart` and is routed from `main.dart` for `upi://pay`.
 
-Top-up creates a Razorpay payment link (`POST /api/wallet/topup`). The app opens the link externally and polls every 2 seconds. Only the Razorpay webhook signature or a server-side payment-link status check can mark a top-up paid; the client cannot credit itself. The migration `0002_multi_tenant.sql` and `0003_debit.sql` hold the atomic `credit_topup` and `debit_wallet` functions.
+Top-up creates a Razorpay payment link (`POST /api/wallet/topup`). The app opens the link externally and polls every 2 seconds. Only the Razorpay webhook signature or a server-side payment-link status check can mark a top-up paid; the client cannot credit itself. The migrations `0000`–`0004` hold the tables, RLS, and the atomic `credit_topup` and `debit_wallet` functions.
+
+Merchant payments are gated. Bridgy has no payout provider yet, so `pay-agent` and `pay-owner` return `SETTLEMENT_NOT_CONFIGURED` instead of debiting a user's real balance for a merchant that never gets paid. Set `MERCHANT_SETTLEMENT_READY=true` only after a payout rail (RazorpayX, Cashfree Payouts, or a PSP merchant account) is wired and tested. Withdrawals use the same gate.
 
 The ERC-4337 design uses a ZeroDev session key with a call policy, a target allow-list, a value limit, and a timestamp policy. That code is not in this repo. The schema deliberately leaves `owner_private_key` and `agent_session_key` out; the owner key stays in `Backend/.env`.
 
@@ -377,6 +379,7 @@ The widget tests load Plus Jakarta Sans through `FontLoader`. Without it, Ahem m
 
 - Wire the ERC-4337 session key and the owner validator on Base Sepolia. `GET /api/wallet/onchain` currently exposes the owner EOA, not a Kernel account.
 - Add Razorpay merchant keys, then run one live ₹1 UPI payment and verify the webhook credit.
+- Add a merchant payout rail before enabling send/withdraw; the backend currently returns `SETTLEMENT_NOT_CONFIGURED` on purpose.
 - Add a Google OAuth client secret so the Google button works; email auth already works.
 - Link the ADB console into `AppShell`.
 - Add crash reporting and a Play internal-test upload. The signed AAB is built; the Play account step is external.
