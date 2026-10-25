@@ -22,7 +22,6 @@ A new Flutter project.
 - Top-up now has two rails: Razorpay payment links for INR and direct Base Sepolia ETH deposits credited to the INR ledger at DEMO_ETH_INR_RATE (100000 -> 0.005 ETH = ₹500). Per-user Kernel addresses derive from the user id via ZeroDev; one backend owner key signs for all of them (demo custody).
 
 ## Notes
-- New feature: feat: per-user auth, RLS, Razorpay top-up, and atomic wallet ledger [Backend/auth.js]
 - New feature: feat: base sepolia receive screen and signed release build [Backend/server.js]
 - gotcha: release signing uses android/key.properties and android/app/bridgy-release.jks, both gitignored. Back them up; losing them blocks Play updates. SHA-1 0B:1F:DB:22:7D:BA:92:BE:35:86:D5:5E:B4:7C:3E:D6:C1:B3:EC:30, SHA-256 61:1A:F8:B2:B9:0B:BC:CD:48:6B:2D:F1:95:BC:91:26:0A:64:E6:B5:D8:7A:BB:FD:29:21:0A:4E:AF:27:F2:B0. Backend/.env holds the Base Sepolia owner key (0xA00B4c7954F40B896037B884BDCCc8d6565C960b); back it up too. [android/app/build.gradle.kts]
 - gotcha: Supabase migrations must run in order 0000_wallet_tables, 0001_profiles, 0002_multi_tenant, 0003_debit, 0004_debit_caps. 0001 alone is not a full schema. The full set was verified by applying a rewritten copy to a throwaway schema inside begin/rollback. auth.users is empty until someone signs up in the app; an empty SQL editor result is expected before the first account. [supabase/migrations/0000_wallet_tables.sql]
@@ -32,6 +31,7 @@ A new Flutter project.
 - Google OAuth setup: Supabase uses a Web application client with redirect https://zgkxfxehrjnncqgoqdog.supabase.co/auth/v1/callback. Android client (optional, native sign-in only) needs package com.bridgy.bridgy and SHA-1 release 0B:1F:DB:22:7D:BA:92:BE:35:86:D5:5E:B4:7C:3E:D6:C1:B3:EC:30 or debug 4A:99:54:29:B7:2B:6F:A6:DE:3B:10:58:4D:B6:D6:3A:8E:43:26:C5. The consent-screen logo is Google Cloud branding, not app code. [android/app/bridgy-release.jks]
 - New feature: feat: credit direct base sepolia deposits at a demo rate [Backend/ledger.js]
 - gotcha: direct Base Sepolia deposits require DEMO_ETH_INR_RATE on the backend; without it /balance returns ONCHAIN_RATE_NOT_CONFIGURED and no INR is credited. Each user gets a distinct Kernel address (derived from the user id) while the single OWNER_PRIVATE_KEY signs. credit_onchain_deposit locks the wallet and uses onchain_seen_wei so polling cannot double-credit. [Backend/onchain.js]
+- Merge: chore: record on-chain top-up and live env requirements
 
 ## Key files
 - `.gitignore`
