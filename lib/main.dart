@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
 
 import 'icons.dart';
 import 'overlay/bridgy_hud.dart';
 import 'screens/app_shell.dart';
+import 'screens/auth_screen.dart';
 import 'screens/upi_checkout_screen.dart';
 import 'services/backend.dart';
 import 'services/goal_intake.dart';
@@ -20,7 +24,7 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await BridgyBackend.init();
   await WalletStore.instance.load();
-  runApp(const MyApp());
+  runApp(const BridgyRoot());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     _listenForDeepLinks();
     _listenForGoals();
@@ -85,14 +89,26 @@ void _listenForDeepLinks() {
   links.uriLinkStream.listen(open, onError: (Object _) {});
 }
 
-/// Handles email verification callback redirect back into the app.
+/// Handles the plain email-verification redirect back into the app.
+///
+/// Supabase-issued links carry auth parameters and are exchanged by
+/// `supabase_flutter`'s own deep-link observer, so this handler must not touch
+/// them (a second exchange would fail).
 void _handleAuthRedirect(Uri uri) {
-  // If Supabase backend is configured, establish session from the confirmation link
-  if (BridgyBackend.enabled && BridgyBackend.client != null) {
-    try {
-      BridgyBackend.client!.auth.getSessionFromUrl(uri);
-    } catch (_) {}
-  }
+  const authKeys = {
+    'code',
+    'token_hash',
+    'access_token',
+    'refresh_token',
+    'error',
+    'error_code',
+    'error_description',
+  };
+  final fragment = Uri.splitQueryString(uri.fragment);
+  final isSupabaseLink =
+      uri.queryParameters.keys.any(authKeys.contains) ||
+      fragment.keys.any(authKeys.contains);
+  if (isSupabaseLink) return;
 
   // Show confirmation dialog when redirected back to Bridgy
   final context = _navigatorKey.currentContext;
@@ -186,8 +202,46 @@ void overlayMain() {
   );
 }
 
+class BridgyRoot extends StatefulWidget {
+  const BridgyRoot({super.key});
+
+  @override
+  State<BridgyRoot> createState() => _BridgyRootState();
+}
+
+class _BridgyRootState extends State<BridgyRoot> {
+  StreamSubscription<AuthState>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    if (BridgyBackend.enabled) {
+      _authSub = BridgyBackend.authChanges.listen((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final signedIn = !BridgyBackend.enabled || BridgyBackend.isSignedIn;
+    return MyApp(
+      home: signedIn ? AppShell(key: _shellKey) : const AuthScreen(),
+    );
+  }
+}
+
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.home});
+
+  /// Overrides the wallet shell, used by [BridgyRoot] for the sign-in gate.
+  final Widget? home;
 
   @override
   Widget build(BuildContext context) {
@@ -209,7 +263,7 @@ class MyApp extends StatelessWidget {
           ),
           child: child ?? const SizedBox.shrink(),
         ),
-        home: AppShell(key: _shellKey),
+        home: home ?? AppShell(key: _shellKey),
       ),
     );
   }

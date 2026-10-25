@@ -6,8 +6,8 @@ _Last updated: 2026-10-25_
 A new Flutter project.
 
 ## Recent issues
-- [OPEN] #0001 PolicyController.save inserts agent_session_key, but server/schema.sql omits that column, so Supabase save fails when no wallet row exists. [lib/state/policy_controller.dart] (open)
 - [DONE] #0002 AI Agents hit OpenRouter credit limit because a stale shell-exported OPENROUTER_API_KEY overrode server/.env [server/config.js] -> server/config.js reads the key from server/.env only; model fixed to deepseek/deepseek-v4.1-flash-1017. Stale-env smoke test returned 200, npm test 6/6, flutter test 19/19. [server/config.js] (fixed)
+- [DONE] #0001 PolicyController.save inserts agent_session_key, but server/schema.sql omits that column, so Supabase save fails when no wallet row exists. [lib/state/policy_controller.dart] -> Removed agent_session_key from the wallets insert in PolicyController.save and Backend pay-agent upsert. Policy save now reports backend success even when the Supabase mirror fails. flutter test 19/19. [lib/state/policy_controller.dart] (fixed)
 
 ## Decisions
 - ADB execution goes through Termux RUN_COMMAND with the command allow-list enforced in server/agent.js; dadb is deferred. Termux needs no extra gradle dependency and the allow-list rejects shell metacharacters before anything reaches the phone. [server/agent.js]
@@ -15,9 +15,9 @@ A new Flutter project.
 - AppShell wraps the tabs with a nested Navigator so the bottom footer stays visible on detail pages (send money, Termux); system back uses NavigatorPopHandler. [lib/screens/app_shell.dart]
 - Bridgy is the public product name for the app and README. The Android launcher label and MaterialApp title now use Bridgy; internal Unipay design-token filenames stay for compatibility. [README.md]
 - Bridgy server reads OPENROUTER_API_KEY from server/.env only and hardcodes deepseek/deepseek-v4.1-flash-1017 in server/config.js. Ambient process env and client model fields are ignored; Node --env-file silently loses to exported vars, so no env-file launch is used. [server/config.js]
+- The Flutter app ships the Supabase project URL and public anon key as compile-time defaults, gates startup on Google OAuth through supabase_flutter's deep-link flow (bridgy://login-callback), and defaults the agent proxy to https://bridgy-backend.vercel.app. Overrides stay available via --dart-define. [lib/services/backend.dart]
 
 ## Notes
-- gotcha: AppShell builds all IndexedStack tabs eagerly, so AgentChatScreen._init starts a 3s accessibility MethodChannel timeout in widget tests. Mock channel com.bridgy.bridgy/accessibility and call SharedPreferences.setMockInitialValues in setUp. [test/widget_test.dart]
 - gotcha: adb-kt 1.0.0/1.0.13 on JitPack is compiled with Kotlin 2.4 metadata; this app uses Kotlin 2.2.20, so the dependency fails with 'incompatible version of Kotlin'. Upgrade Kotlin/KSP together before adding it. AccessibilityService remains the working on-device agent transport. [android/app/build.gradle.kts]
 - Unipay AI path: Flutter calls the Express proxy at /api/chat/completions; the proxy streams OpenRouter model deepseek/deepseek-v4.1-flash-1017 and keeps the key in gitignored server/.env. Start with npm start (node --env-file=.env). [server/index.js]
 - gotcha: README art is rendered from real demo-phone screenshots using the replicate-this palette and fonts. The fonts are used only to render PNG/GIF assets and are not committed or redistributed. README media lives in docs/media and is not bundled into the APK. [docs/media/]
@@ -27,6 +27,7 @@ A new Flutter project.
 - New feature: feat: add Breezy 3D logo icon set [landing/index.html]
 - New feature: feat: finish Bridgy app shell, wallet store, and server config [android/app/src/main/kotlin/com/bridgy/bridgy/AgentAccessibilityService.kt]
 - Merge: chore: refresh project memory summary
+- gotcha: live Supabase project zgkxfxehrjnncqgoqdog has no public.wallets table (PostgREST PGRST205), so the app's policy mirror and backend wallet upsert silently skip. Run server/schema.sql in the Supabase SQL editor. Google provider is enabled but /auth/v1/authorize returns 'missing OAuth secret'; add the Google client ID and secret in Supabase Auth providers before the sign-in gate can pass. [server/schema.sql]
 
 ## Key files
 - `.gitignore`

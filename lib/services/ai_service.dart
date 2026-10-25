@@ -12,7 +12,8 @@ class AiResponse {
 }
 
 class AiService {
-  static const String backendDefaultBaseUrl = 'http://10.0.2.2:8787';
+  static const String backendDefaultBaseUrl =
+      'https://bridgy-backend.vercel.app';
   static const String _defaultBaseUrl = String.fromEnvironment(
     'BRIDGY_AGENT_URL',
     defaultValue: backendDefaultBaseUrl,
@@ -137,6 +138,8 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
     return host == 'localhost' ||
         host == '127.0.0.1' ||
         host == '10.0.2.2' ||
+        host == 'bridgy-backend.vercel.app' ||
+        host.endsWith('.vercel.app') ||
         uri.port == 8787 ||
         uri.port == 3000;
   }

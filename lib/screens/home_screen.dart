@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../services/backend.dart';
 import '../state/wallet_store.dart';
+import '../theme.dart';
 import '../unipay.dart';
 import 'send_money_screen.dart';
 
@@ -269,6 +271,23 @@ class _HeaderState extends State<_Header> {
             listenable: WalletStore.instance,
             builder: (context, _) => Column(
               children: [
+                const Row(
+                  children: [
+                    Text(
+                      'BRIDGY',
+                      style: TextStyle(
+                        fontFamily: UF.sans,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.6,
+                        color: Color(0x99FFFFFF),
+                      ),
+                    ),
+                    Spacer(),
+                    _AccountChip(),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 _card(),
                 const SizedBox(height: 16),
                 Row(
@@ -755,6 +774,124 @@ class _PressScaleState extends State<_PressScale> {
         scale: _down ? 0.97 : 1,
         duration: const Duration(milliseconds: 120),
         child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Small avatar in the header. Opens the signed-in account sheet.
+class _AccountChip extends StatelessWidget {
+  const _AccountChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final email = BridgyBackend.user?.email;
+    if (!BridgyBackend.enabled || email == null) {
+      return const SizedBox.shrink();
+    }
+    return InkResponse(
+      key: const Key('account-chip'),
+      onTap: () => _accountSheet(context, email),
+      radius: 20,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: const Color(0x1FFFFFFF),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0x33FFFFFF)),
+        ),
+        child: Center(
+          child: Text(
+            email.substring(0, 1).toUpperCase(),
+            style: uiStyle(
+              size: 13,
+              weight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _accountSheet(BuildContext context, String email) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Center(
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    color: AppColors.goldSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      email.substring(0, 1).toUpperCase(),
+                      style: displayStyle(size: 24, spacing: -0.5),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                email,
+                textAlign: TextAlign.center,
+                style: uiStyle(size: 13, color: AppColors.muted),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                height: 50,
+                child: ElevatedButton(
+                  key: const Key('sign-out'),
+                  onPressed: () async {
+                    Navigator.of(sheetContext).pop();
+                    await BridgyBackend.signOut();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.dark,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  child: Text(
+                    'Sign out',
+                    style: uiStyle(
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

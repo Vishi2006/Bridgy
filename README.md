@@ -224,7 +224,7 @@ The endpoint returns 400 for missing fields, 422 when the dump has no usable nod
 
 The proxy caps `max_tokens` at 8192, defaults `temperature` to 0.7, and sets `reasoning.effort` to low. It streams SSE when `stream` is true. The key is read from `server/.env` only. An exported `OPENROUTER_API_KEY` in your shell is ignored, because Node's `--env-file` does not override existing variables and would silently use an old key.
 
-The app builds the base URL as `$BRIDGY_AGENT_URL/api`, so `http://192.168.1.20:8787` becomes `http://192.168.1.20:8787/api/chat/completions`.
+The app builds the base URL as `$BRIDGY_AGENT_URL/api`, so `http://192.168.1.20:8787` becomes `http://192.168.1.20:8787/api/chat/completions`. The default is the deployed backend at `https://bridgy-backend.vercel.app`; pass the define to use a local server.
 
 ## Data and keys
 
@@ -295,21 +295,26 @@ npm test
 
 ```sh
 flutter pub get
+flutter run
+```
+
+The default backend is `https://bridgy-backend.vercel.app`. Use a local server with:
+
+```sh
 flutter run --dart-define=BRIDGY_AGENT_URL=http://<laptop-lan-ip>:8787
 ```
 
-The default URL is `http://10.0.2.2:8787`, which is correct for the Android emulator. A physical phone needs the laptop's LAN address.
+The Android emulator reaches a host server at `http://10.0.2.2:8787`.
 
-Supabase is optional:
+Supabase is configured in `lib/services/backend.dart` with the project URL and the public anon key. Override them per environment:
 
 ```sh
 flutter run \
-  --dart-define=BRIDGY_AGENT_URL=http://<laptop-lan-ip>:8787 \
   --dart-define=SUPABASE_URL=https://<project>.supabase.co \
   --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
 
-Without those defines, the policy and the terminal log stay on the device.
+The app opens on a Google sign-in gate when those values are present. Enable Google under Supabase **Authentication > Providers** and add `bridgy://login-callback` to the redirect allow list. Run `server/schema.sql` once in the Supabase SQL editor; without it the policy mirror stays local while the backend policy still saves.
 
 ### 3. Set up the phone
 

@@ -84,8 +84,8 @@ class PolicyController extends ChangeNotifier {
           if (expiry != null) expiresAt = expiry.toLocal();
           syncStatus = 'synced (cloud)';
         }
-      } on Exception catch (e) {
-        syncStatus = 'load note: $e';
+      } catch (e) {
+        debugPrint('[PolicyController] Supabase load skipped: $e');
       }
     }
 
@@ -93,13 +93,15 @@ class PolicyController extends ChangeNotifier {
   }
 
   Future<void> save() async {
-    // Update backend policy
-    await WalletService.updatePolicy(
+    // Backend is the authoritative policy store for the running agent.
+    final backendSaved = await WalletService.updatePolicy(
       perTxLimitInr: perTxLimitInr,
       dailyLimitInr: dailyLimitInr,
     );
+    syncStatus = backendSaved ? 'saved (backend)' : 'backend unavailable';
 
-    // Update Supabase if enabled
+    // Supabase is a best-effort mirror. A missing table or RLS failure must not
+    // hide the fact that the backend already accepted the policy.
     final client = BridgyBackend.client;
     if (client != null) {
       final payload = {
@@ -114,21 +116,15 @@ class PolicyController extends ChangeNotifier {
         } else {
           final inserted = await client
               .from('wallets')
-              .insert({
-                'smart_wallet_address': smartWalletAddress,
-                'agent_session_key': agentSessionAddress,
-                ...payload,
-              })
+              .insert({'smart_wallet_address': smartWalletAddress, ...payload})
               .select('id')
               .single();
           _rowId = inserted['id'];
         }
         syncStatus = 'saved';
-      } on Exception catch (e) {
-        syncStatus = 'save failed: $e';
+      } catch (e) {
+        debugPrint('[PolicyController] Supabase mirror skipped: $e');
       }
-    } else {
-      syncStatus = 'saved (backend)';
     }
 
     notifyListeners();

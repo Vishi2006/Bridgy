@@ -434,7 +434,6 @@ app.post('/api/wallet/pay-agent', async (req, res) => {
     try {
       await supabase.from('wallets').upsert({
         smart_wallet_address: walletState.smartAccountAddress,
-        agent_session_key: walletState.agentSessionAddress,
         spent_today_inr: walletState.policy.spentTodayInr,
       });
     } catch (_) {}
