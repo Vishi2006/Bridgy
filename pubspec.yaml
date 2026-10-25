@@ -45,6 +45,7 @@ dependencies:
   url_launcher: ^6.3.0
   flutter_local_notifications: ^18.0.0
   shizuku_api: ^1.2.2
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../icons.dart';
 import '../state/policy_controller.dart';
 import '../theme.dart';
+import 'receive_screen.dart';
 import 'top_up_screen.dart';
 
 /// Spending policy editor: smart wallet, per-transaction limit, daily limit, expiry.
@@ -241,6 +242,41 @@ class _PolicyScreenState extends State<PolicyScreen> {
                     size: 12,
                     weight: FontWeight.w700,
                     color: AppColors.card,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        InkResponse(
+          key: const Key('policy-receive'),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const ReceiveScreen()),
+          ),
+          radius: 24,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const AppIcon(
+                  Icons8.arrowUpRight,
+                  size: 15,
+                  color: AppColors.ink,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Receive on Base Sepolia',
+                  style: uiStyle(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: AppColors.ink,
                   ),
                 ),
               ],

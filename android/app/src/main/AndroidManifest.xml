@@ -15,7 +15,6 @@
 
     <application
         android:label="Bridgy"
-        android:usesCleartextTraffic="true"
         android:name=".BridgyApplication"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'backend.dart';
@@ -71,12 +72,37 @@ class TopUpOrder {
       status == 'PAID' || status == 'FAILED' || status == 'EXPIRED';
 }
 
+class OnChainWallet {
+  const OnChainWallet({
+    required this.address,
+    required this.network,
+    required this.chainId,
+    required this.balanceEth,
+    required this.explorer,
+  });
+
+  final String address;
+  final String network;
+  final int chainId;
+  final double balanceEth;
+  final String explorer;
+}
+
 class WalletService {
   /// Production backend. No localhost or machine-specific override exists.
   static const String defaultBaseUrl = 'https://bridgy-backend.vercel.app';
 
+  /// Test seams only; production leaves both null.
+  @visibleForTesting
+  static http.Client? clientOverride;
+
+  @visibleForTesting
+  static String? tokenOverride;
+
+  static http.Client get _client => clientOverride ?? http.Client();
+
   static Future<Map<String, String>> _headers() async {
-    final token = BridgyBackend.accessToken;
+    final token = tokenOverride ?? BridgyBackend.accessToken;
     if (token == null || token.isEmpty) {
       throw const WalletApiException(
         'Sign in required: no Supabase session.',
@@ -100,11 +126,11 @@ class WalletService {
     final headers = await _headers();
     final response = switch (method) {
       'GET' =>
-        await http
+        await _client
             .get(_uri(path), headers: headers)
             .timeout(const Duration(seconds: 15)),
       'POST' =>
-        await http
+        await _client
             .post(_uri(path), headers: headers, body: jsonEncode(body ?? {}))
             .timeout(const Duration(seconds: 20)),
       _ => throw WalletApiException('Unsupported method $method'),
@@ -161,6 +187,21 @@ class WalletService {
           : DateTime.fromMillisecondsSinceEpoch(0),
       smartAccountAddress: '${body['smartAccountAddress'] ?? ''}',
       isLive: body['isLive'] == true,
+    );
+  }
+
+  static Future<OnChainWallet> getOnChain() async {
+    final body = await _request('GET', '/api/wallet/onchain');
+    final address = body['address'];
+    if (address is! String || address.isEmpty) {
+      throw const WalletApiException('Backend returned no on-chain address');
+    }
+    return OnChainWallet(
+      address: address,
+      network: '${body['network'] ?? ''}',
+      chainId: (body['chainId'] as num?)?.toInt() ?? 0,
+      balanceEth: _number(body['balanceEth']),
+      explorer: '${body['explorer'] ?? ''}',
     );
   }
 

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+import { formatEther } from 'viem';
 
 import { askModel, parseScreen, validateCommand } from './agent.js';
 import { requireUser } from './auth.js';
@@ -13,7 +14,7 @@ import {
   createRazorpay,
   sendRazorpayError,
 } from './razorpay.js';
-import { initSmartAccount, walletState } from './wallet.js';
+import { initSmartAccount, ownerAccount, publicClient, walletState } from './wallet.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -462,6 +463,32 @@ app.get('/api/wallet/balance', auth, async (req, res) => {
   } catch (err) {
     console.error('[Wallet Balance]', err.message);
     return sendLedgerError(res, err);
+  }
+});
+
+// 2b. On-chain Base Sepolia address and balance (MetaMask).
+app.get('/api/wallet/onchain', auth, async (_req, res) => {
+  try {
+    const address = ownerAccount.address;
+    const wei = await publicClient.getBalance({ address });
+    return res.json({
+      address,
+      kind: 'owner-eoa',
+      network: 'Base Sepolia',
+      chainId: 84532,
+      balanceWei: wei.toString(),
+      balanceEth: Number(formatEther(wei)),
+      explorer: `https://sepolia.basescan.org/address/${address}`,
+      smartAccountAddress: walletState.isLive
+        ? walletState.smartAccountAddress
+        : null,
+    });
+  } catch (err) {
+    console.error('[On-chain Wallet]', err.message);
+    return res.status(502).json({
+      error: err.message,
+      code: 'ONCHAIN_READ_FAILED',
+    });
   }
 });
 

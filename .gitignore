@@ -60,3 +60,5 @@ app.*.map.json
 /.superpowers/
 /Backend/.env
 /android/key.properties
+
+/android/app/*.jks

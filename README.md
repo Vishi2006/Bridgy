@@ -61,18 +61,20 @@ The network can be slow. The demo path can replay a calibrated tap sequence with
 
 | Surface | State |
 | --- | --- |
-| Wallet UI and send flow | Built |
+| Wallet UI and send flow | Built; balance and history come from the backend ledger |
+| Auth | Email/password, magic link, and Google button; Google needs its OAuth secret |
+| Top-up | Razorpay payment links with signed webhook; needs merchant keys |
 | Floating HUD | Built; started from `AgentScreen` |
 | Agent chat, accessibility control, skill memory | Built; screen control must be enabled |
 | ADB loop, XML parser, command allow-list | Backend and validator tested; the `AgentScreen` console is not linked from the current shell |
-| Policy engine and UPI parser | Built and tested |
+| Policy engine and UPI parser | Built, backend-enforced, and tested |
 | UPI checkout screen | Built, tested, and routed from `main.dart` for `upi://pay` |
-| Supabase sync | Optional; schema and demo RLS are checked in. The local path is the supported one. |
-| ERC-4337 settlement | Not implemented |
+| Supabase sync | Required; per-user RLS and migrations live in `supabase/migrations` |
+| ERC-4337 settlement | Not implemented; the receive screen shows the owner Base Sepolia address |
 
-The current shell is Home and Agent. A `upi://pay` link opens the policy checkout as a route. The policy editor and the ADB console are in the repo but are not linked from the bottom navigation yet.
+The current shell is Home and Agent. A `upi://pay` link opens the policy checkout as a route. Top-up opens Razorpay; the UPI ID and PIN are entered there, never in Bridgy.
 
-The Android build is a prototype. The wallet uses seeded demo data. Treat the policy numbers and the UPI flow as a working model, not a production payment path.
+The Android build is a working app shell, not a store submission. Top-up stays disabled with an explicit `PSP_NOT_CONFIGURED` error until Razorpay keys are set; Google sign-in stays disabled until the OAuth secret is set.
 
 ## System map
 
@@ -119,13 +121,13 @@ The default path is `AgentAccessibilityService`. It walks every interactive wind
 
 The screen is polled until it stops changing. `waitForSettledScreenDescription` polls every 150ms, waits at least 350ms, and gives up at the action's budget: 1.5s after a tap, 3s after an app opens, 2s after typing. Stable screens move on immediately.
 
-The ADB path uses `uiautomator dump /sdcard/window_dump.xml`. The app watches the file until the content changes and stays stable for one poll. `server/agent.js` parses the XML, keeps labeled or clickable nodes, converts bounds to a center, caps labels at 60 characters, and returns at most 40 nodes. Reading the dump needs All files access on the phone.
+The ADB path uses `uiautomator dump /sdcard/window_dump.xml`. The app watches the file until the content changes and stays stable for one poll. `Backend/agent.js` parses the XML, keeps labeled or clickable nodes, converts bounds to a center, caps labels at 60 characters, and returns at most 40 nodes. Reading the dump needs All files access on the phone.
 
 By default, the accessibility path sends compressed text, not the raw tree. The ADB path sends the XML to your server, which reduces it to 40 nodes before the model call.
 
 ## Decision
 
-The app talks to an OpenAI-compatible proxy at `/api/chat/completions`. The OpenRouter key stays in `server/.env`. The APK uses the placeholder `server-proxy` and never sees it. The model is fixed to `deepseek/deepseek-v4.1-flash-1017` in `server/config.js`; there is no model setting in the app or the environment.
+The app talks to an OpenAI-compatible proxy at `/api/chat/completions`. The OpenRouter key stays in `Backend/.env`. The APK uses the placeholder `server-proxy` and never sees it. The model is fixed to `deepseek/deepseek-v4.1-flash-1017` in the app and the proxy.
 
 Agent mode uses a router prompt. It either answers, opens an app, reads the screen, or returns `execute_task`. The executor then runs a second, step-level prompt with a strict JSON action schema:
 
@@ -152,7 +154,7 @@ The native bridge listens on `MethodChannel("com.bridgy.app/adb")` and exposes `
 
 `AdbBridge.run` strips a leading `adb shell ` before sending a command to the native channel. The native side adds `adb shell` back unless the call is raw. The macro path uses raw for `monkey` and non-raw for `input`.
 
-The server validates every command the model returns. `server/agent.js` strips an optional `adb shell ` prefix, rejects commands longer than 120 characters, rejects shell metacharacters, and then matches the rest against a short allow-list.
+The server validates every command the model returns. `Backend/agent.js` strips an optional `adb shell ` prefix, rejects commands longer than 120 characters, rejects shell metacharacters, and then matches the rest against a short allow-list.
 
 The rejected characters are `;`, `&`, `|`, a backtick, `$`, `>`, `<`, newlines, and backslashes.
 
@@ -191,17 +193,30 @@ At exactly the per-transaction limit, the result is allow. The tests pin that bo
 
 The defaults are ₹200 per transaction, ₹500 per day, and a 24-hour expiry. The editor and `PolicyController` hold the local copy. Supabase is optional and gated by `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
 
-`UpiCheckoutScreen` renders the decision: within policy, owner approval, or blocked. The owner sheet is a confirmation only. It does not yet call a signing endpoint. This screen is tested in `test/upi_checkout_test.dart` and is routed from `main.dart` for `upi://pay`.
+`UpiCheckoutScreen` renders the decision: within policy, owner approval, or blocked. The owner sheet confirms, then `POST /api/wallet/pay-owner` debits the user's ledger balance atomically. `POST /api/wallet/pay-agent` enforces the per-tx cap, daily cap, expiry, and balance before it debits. This screen is tested in `test/upi_checkout_test.dart` and is routed from `main.dart` for `upi://pay`.
 
-The ERC-4337 design uses a ZeroDev session key with a call policy, a target allow-list, a value limit, and a timestamp policy. The owner uses a sudo validator for out-of-policy payments. That code is not in this repo. The schema deliberately leaves `owner_private_key` and `agent_session_key` out.
+Top-up creates a Razorpay payment link (`POST /api/wallet/topup`). The app opens the link externally and polls every 2 seconds. Only the Razorpay webhook signature or a server-side payment-link status check can mark a top-up paid; the client cannot credit itself. The migration `0002_multi_tenant.sql` and `0003_debit.sql` hold the atomic `credit_topup` and `debit_wallet` functions.
+
+The ERC-4337 design uses a ZeroDev session key with a call policy, a target allow-list, a value limit, and a timestamp policy. That code is not in this repo. The schema deliberately leaves `owner_private_key` and `agent_session_key` out; the owner key stays in `Backend/.env`.
 
 ## Backend
 
-| Route | Purpose |
-| --- | --- |
-| `GET /health` | Liveness and the active model name |
-| `POST /api/chat/completions` | OpenAI-compatible proxy with optional SSE streaming |
-| `POST /api/agent/next-adb` | XML in, one validated ADB command out |
+| Route | Auth | Purpose |
+| --- | --- | --- |
+| `GET /health` | none | Liveness |
+| `POST /api/chat/completions` | none | OpenAI-compatible proxy with optional SSE streaming |
+| `POST /api/agent/next-adb` | none | XML in, one validated ADB command out |
+| `GET /api/wallet/status` | Bearer | Balance, limits, expiry |
+| `GET /api/wallet/balance` | Bearer | Ledger balance |
+| `GET /api/wallet/transactions` | Bearer | Recent ledger rows |
+| `POST /api/wallet/topup` | Bearer | Create a Razorpay payment link |
+| `GET /api/wallet/topup/:id` | Bearer | Poll and server-confirm a top-up |
+| `POST /api/wallet/razorpay/webhook` | signature | Credit a paid top-up exactly once |
+| `POST /api/wallet/pay-agent` | Bearer | Policy-checked debit |
+| `POST /api/wallet/pay-owner` | Bearer | Owner-approved debit |
+| `POST /api/wallet/renew-session` | Bearer | Extend the policy window |
+| `POST /api/wallet/policy` | Bearer | Update limits |
+| `GET /api/wallet/onchain` | Bearer | Base Sepolia address and ETH balance |
 
 ```http
 POST /api/agent/next-adb
@@ -222,17 +237,19 @@ Content-Type: application/json
 
 The endpoint returns 400 for missing fields, 422 when the dump has no usable nodes or the model returns a rejected command, and 502 when the upstream model call fails.
 
-The proxy caps `max_tokens` at 8192, defaults `temperature` to 0.7, and sets `reasoning.effort` to low. It streams SSE when `stream` is true. The key is read from `server/.env` only. An exported `OPENROUTER_API_KEY` in your shell is ignored, because Node's `--env-file` does not override existing variables and would silently use an old key.
+The proxy caps `max_tokens` at 8192, defaults `temperature` to 0.7, and sets `reasoning.effort` to low. It streams SSE when `stream` is true. The key is read from `Backend/.env`.
 
-The app builds the base URL as `$BRIDGY_AGENT_URL/api`, so `http://192.168.1.20:8787` becomes `http://192.168.1.20:8787/api/chat/completions`. The default is the deployed backend at `https://bridgy-backend.vercel.app`; pass the define to use a local server.
+Every wallet route requires `Authorization: Bearer <Supabase access token>`. The backend validates it with Supabase Auth and derives the owner id from it; a missing or expired token is a 401. Wallet writes use the service-role key, which never ships in the APK.
+
+The agent chat proxy still accepts `BRIDGY_AGENT_URL` for local development. Wallet calls do not: they always use `https://bridgy-backend.vercel.app`.
 
 ## Data and keys
 
-`server/schema.sql` creates three tables: `wallets`, `terminal_logs`, and `transactions`. A wallet row holds the limits, the balance, today's spend, and the expiry. A transaction row holds the merchant, the VPA, the amount, the status, and the hash.
+`supabase/migrations` creates `profiles`, `wallets`, `transactions`, `topups`, and `terminal_logs`. Every money row has `owner_id`. A wallet row holds the limits, the balance, today's spend, and the expiry. A top-up row holds the Razorpay link id, payment id, and status.
 
-No signing key is stored in the database. The PRD's `owner_private_key` and `agent_session_key` columns are deliberately omitted. A leaked database must never leak a key.
+No signing key is stored in the database. The owner key lives in `Backend/.env`; a leaked database must never leak a key.
 
-The RLS policies are `true` for the demo because there is no auth yet. Tighten them to `auth.uid() = owner_id` before any real use.
+RLS is `auth.uid() = owner_id` for select on wallets, transactions, and topups. Authenticated clients get no insert/update/delete policy; only the service role writes. The atomic credit and debit functions are granted to `service_role` only.
 
 ## Security model
 
@@ -271,25 +288,20 @@ Fast mode skips the model call entirely. That is the path to use when the venue 
 ### 1. Start the backend
 
 ```sh
-cd server
+cd Backend
 cp .env.example .env
-# OPENROUTER_API_KEY in .env is the only key the server reads
+# Fill SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY.
+# Add RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET for top-up.
+# Add OPENROUTER_API_KEY for agent chat.
 npm install
 npm start
 ```
 
-The server listens on `0.0.0.0:8787`. Restart it after changing `.env`. Check it with:
+The server listens on `0.0.0.0:8787`. Restart it after changing `.env`. Check it with `curl http://localhost:8787/health`.
 
-```sh
-curl http://localhost:8787/health
-```
+Run the backend tests with `cd Backend && npm test`.
 
-Run the server tests with:
-
-```sh
-cd server
-npm test
-```
+Apply the database migrations once, in order, from `supabase/migrations` (Supabase SQL editor or `supabase db push`).
 
 ### 2. Run the app
 
@@ -298,13 +310,9 @@ flutter pub get
 flutter run
 ```
 
-The default backend is `https://bridgy-backend.vercel.app`. Use a local server with:
+The wallet backend is `https://bridgy-backend.vercel.app`. Agent chat can point elsewhere with `--dart-define=BRIDGY_AGENT_URL=...`; wallet calls cannot, so a misconfigured localhost build cannot break payments.
 
-```sh
-flutter run --dart-define=BRIDGY_AGENT_URL=http://<laptop-lan-ip>:8787
-```
-
-The Android emulator reaches a host server at `http://10.0.2.2:8787`.
+The Android emulator reaches a host server at `http://10.0.2.2:8787` for chat.
 
 Supabase is configured in `lib/services/backend.dart` with the project URL and the public anon key. Override them per environment:
 
@@ -314,7 +322,9 @@ flutter run \
   --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
 
-The app opens on a Google sign-in gate when those values are present. Enable Google under Supabase **Authentication > Providers** and add `bridgy://login-callback` to the redirect allow list. Run `server/schema.sql` once in the Supabase SQL editor; without it the policy mirror stays local while the backend policy still saves.
+The app opens on a sign-in gate. Email/password and magic link work without extra configuration. Google additionally needs a Google Cloud OAuth client (Web), its client id and secret pasted into Supabase **Authentication > Providers > Google**, and `bridgy://login-callback` in the redirect allow list. Email signup confirmation relies on Supabase SMTP; add custom SMTP for reliable delivery.
+
+Release builds need `android/key.properties` and `android/app/bridgy-release.jks`. Both are gitignored. Missing files fail the build instead of falling back to the debug key.
 
 ### 3. Set up the phone
 
@@ -344,27 +354,33 @@ flutter config --jdk-dir /path/to/jdk-21/Contents/Home
 
 ```sh
 flutter test
-cd server && npm test
+cd Backend && npm test
 ```
 
 | Test file | What it covers |
 | --- | --- |
 | `test/policy_test.dart` | Per-transaction boundary, daily cap, expiry, UPI parsing |
-| `test/upi_checkout_test.dart` | Allow, owner approval, block, malformed link |
+| `test/upi_checkout_test.dart` | Allow, owner approval, block, malformed link, API error |
+| `test/auth_screen_test.dart` | Email, password, magic link, validation, Google button |
+| `test/top_up_screen_test.dart` | Razorpay link, polling, paid credit, PSP error, expiry |
+| `test/receive_screen_test.dart` | On-chain address, ETH balance, RPC error |
 | `test/macro_test.dart` | App selection, ADB-safe query, launch and tap order |
 | `test/widget_test.dart` | Home, send, agent, composer, font loading |
-| `server/agent.test.js` | XML centers, allow-list, metacharacters, fenced JSON |
+| `Backend/agent.test.js` | XML centers, allow-list, metacharacters, fenced JSON |
+| `Backend/auth.test.js` | Missing, invalid, valid, and unavailable auth |
+| `Backend/ledger.test.js` | Wallet read, top-up, idempotent credit, debit |
+| `Backend/razorpay.test.js` | Paise conversion, signature, config errors |
 
 The widget tests load Plus Jakarta Sans through `FontLoader`. Without it, Ahem metrics cause RenderFlex overflows.
 
 ## Limits and next steps
 
-- Wire the ERC-4337 session key and the owner validator on Base Sepolia.
-- Connect the owner sheet to a signing endpoint and a bundler.
-- Link the policy editor and the ADB console into `AppShell`.
-- Add auth and replace the demo RLS policies before any real money.
+- Wire the ERC-4337 session key and the owner validator on Base Sepolia. `GET /api/wallet/onchain` currently exposes the owner EOA, not a Kernel account.
+- Add Razorpay merchant keys, then run one live ₹1 UPI payment and verify the webhook credit.
+- Add a Google OAuth client secret so the Google button works; email auth already works.
+- Link the ADB console into `AppShell`.
+- Add crash reporting and a Play internal-test upload. The signed AAB is built; the Play account step is external.
 - Recalibrate `lib/services/macro.dart` for the target screen. It multiplies by 1080x2400.
-- Fix the `PolicyController.save()` insert, which references an `agent_session_key` column that `server/schema.sql` does not define.
 
 Cross-app control is Android-only. The iOS target is not supported.
 
@@ -381,10 +397,13 @@ android/
   MainActivity.kt           MethodChannel bridge, goal intake
   AgentAccessibilityService.kt
   BridgyAppFunctions.kt     Gemini AppFunction
-server/
-  index.js                  Express routes
-  agent.js                  XML parser, model call, command allow-list
-  schema.sql                Supabase tables and demo RLS
+Backend/
+  server.js                 Express routes, auth gate, Razorpay webhook
+  auth.js                   Supabase JWT middleware
+  ledger.js                 Per-user wallet, top-up, debit
+  razorpay.js               Payment links and signature checks
+  wallet.js                 Optional ZeroDev owner/session keys
+supabase/migrations/        profiles, multi-tenant RLS, credit/debit RPCs
 docs/media/                 README images and GIFs
 test/                       policy, UPI, macro, widget tests
 tool/preview.dart           web preview for the send and agent screens
