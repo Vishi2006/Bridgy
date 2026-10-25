@@ -12,7 +12,6 @@ import 'screens/auth_screen.dart';
 import 'screens/upi_checkout_screen.dart';
 import 'services/backend.dart';
 import 'services/goal_intake.dart';
-import 'state/wallet_store.dart';
 import 'theme.dart';
 import 'unipay.dart';
 
@@ -23,7 +22,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await BridgyBackend.init();
-  await WalletStore.instance.load();
   runApp(const BridgyRoot());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     _listenForDeepLinks();
@@ -60,12 +58,16 @@ void _listenForDeepLinks() {
           transitionsBuilder: (_, animation, _, child) => FadeTransition(
             opacity: animation,
             child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.08),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-              ),
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(0, 0.08),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
               child: child,
             ),
           ),

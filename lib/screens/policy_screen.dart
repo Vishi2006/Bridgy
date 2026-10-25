@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../icons.dart';
 import '../state/policy_controller.dart';
 import '../theme.dart';
+import 'top_up_screen.dart';
 
 /// Spending policy editor: smart wallet, per-transaction limit, daily limit, expiry.
 class PolicyScreen extends StatefulWidget {
@@ -146,11 +147,17 @@ class _PolicyScreenState extends State<PolicyScreen> {
               decoration: BoxDecoration(
                 color: AppColors.gold.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppColors.gold.withValues(alpha: 0.3),
+                ),
               ),
               child: Text(
                 'Base Sepolia',
-                style: uiStyle(size: 10, weight: FontWeight.w700, color: AppColors.goldText),
+                style: uiStyle(
+                  size: 10,
+                  weight: FontWeight.w700,
+                  color: AppColors.goldText,
+                ),
               ),
             ),
           ],
@@ -169,7 +176,9 @@ class _PolicyScreenState extends State<PolicyScreen> {
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: addr));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Wallet address copied to clipboard')),
+                  const SnackBar(
+                    content: Text('Wallet address copied to clipboard'),
+                  ),
                 );
               },
               tooltip: 'Copy address',
@@ -195,6 +204,40 @@ class _PolicyScreenState extends State<PolicyScreen> {
               style: uiStyle(size: 11, color: AppColors.muted),
             ),
           ],
+        ),
+        const SizedBox(height: 14),
+        InkResponse(
+          key: const Key('policy-topup'),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => const TopUpScreen())),
+          radius: 24,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.dark,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const AppIcon(
+                  Icons8.arrowDownLeft,
+                  size: 15,
+                  color: AppColors.gold,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Top up wallet',
+                  style: uiStyle(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: AppColors.card,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );
@@ -222,7 +265,10 @@ class _PolicyScreenState extends State<PolicyScreen> {
           onChanged: (v) => _controller.setPerTxLimit(v),
         ),
         const Divider(color: AppColors.border, height: 28),
-        Text('Daily spending budget', style: uiStyle(size: 12, color: AppColors.muted)),
+        Text(
+          'Daily spending budget',
+          style: uiStyle(size: 12, color: AppColors.muted),
+        ),
         const SizedBox(height: 4),
         Text(
           '₹${_controller.dailyLimitInr.round()}',
@@ -282,7 +328,9 @@ class _PolicyScreenState extends State<PolicyScreen> {
                 children: [
                   for (final entry in presets.entries)
                     InkResponse(
-                      onTap: () => _controller.setExpiry(DateTime.now().add(entry.value)),
+                      onTap: () => _controller.setExpiry(
+                        DateTime.now().add(entry.value),
+                      ),
                       radius: 20,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -309,22 +357,31 @@ class _PolicyScreenState extends State<PolicyScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(ok
-                        ? 'Session renewed for 24 hours on Base Sepolia'
-                        : 'Session renewed locally'),
+                    content: Text(
+                      ok
+                          ? 'Session renewed for 24 hours on Base Sepolia'
+                          : 'Session renewed locally',
+                    ),
                   ),
                 );
               },
               radius: 22,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.gold,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   'Renew 24h',
-                  style: uiStyle(size: 12, weight: FontWeight.w700, color: AppColors.ink),
+                  style: uiStyle(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
                 ),
               ),
             ),
@@ -385,7 +442,8 @@ class _PolicyScreenState extends State<PolicyScreen> {
 abstract final class BridgyPolicyStatus {
   static Color colorFor(String status) {
     if (status.contains('failed')) return AppColors.negative;
-    if (status.contains('saved') || status.contains('synced')) return AppColors.gold;
+    if (status.contains('saved') || status.contains('synced'))
+      return AppColors.gold;
     return AppColors.muted;
   }
 }

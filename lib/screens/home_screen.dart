@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -6,6 +8,7 @@ import '../state/wallet_store.dart';
 import '../theme.dart';
 import '../unipay.dart';
 import 'send_money_screen.dart';
+import 'top_up_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.onOpenSend});
@@ -161,10 +164,8 @@ class HomeScreen extends StatelessWidget {
       PageRouteBuilder<void>(
         transitionDuration: const Duration(milliseconds: 360),
         reverseTransitionDuration: const Duration(milliseconds: 280),
-        pageBuilder: (_, _, _) => SendMoneyScreen(
-          donate: donate,
-          onSent: () {},
-        ),
+        pageBuilder: (_, _, _) =>
+            SendMoneyScreen(donate: donate, onSent: () {}),
         transitionsBuilder: (_, animation, _, child) {
           final curved = CurvedAnimation(
             parent: animation,
@@ -218,13 +219,10 @@ class HomeScreen extends StatelessWidget {
               style: uText(size: 22, weight: FontWeight.w700, spacing: -0.6),
             ),
             const SizedBox(height: 6),
-            Text(
-              tx.subtitle,
-              style: uText(size: 13, color: U.grey),
-            ),
+            Text(tx.subtitle, style: uText(size: 13, color: U.grey)),
             const SizedBox(height: 22),
             Text(
-              '${tx.amount < 0 ? '-' : '+'}\$ ${tx.amount.abs().toStringAsFixed(2)}',
+              '${tx.amount < 0 ? '-' : '+'}₹ ${tx.amount.abs().toStringAsFixed(2)}',
               style: uText(size: 34, weight: FontWeight.w800, spacing: -1),
             ),
             const SizedBox(height: 8),
@@ -246,8 +244,33 @@ class _Header extends StatefulWidget {
   State<_Header> createState() => _HeaderState();
 }
 
-class _HeaderState extends State<_Header> {
+class _HeaderState extends State<_Header> with WidgetsBindingObserver {
   bool _primary = false;
+  Timer? _balanceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WalletStore.instance.refresh();
+    _balanceTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      WalletStore.instance.refresh();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WalletStore.instance.refresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    _balanceTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -312,20 +335,49 @@ class _HeaderState extends State<_Header> {
                     ),
                     const SizedBox(width: 14),
                     Expanded(
-                      child: _action(
-                        'Deposit',
-                        UArt.arrowDownLeft,
-                        () => _moneySheet(context, withdraw: false),
-                      ),
+                      child: _action('Top up', UArt.arrowDownLeft, _openTopUp),
                     ),
                   ],
                 ),
+                if (WalletStore.instance.error != null) ...[
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    key: const Key('balance-error'),
+                    onTap: () => WalletStore.instance.refresh(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0x33DC2626),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0x66FCA5A5)),
+                      ),
+                      child: Text(
+                        'Balance unavailable: ${WalletStore.instance.error}\n'
+                        'Tap to retry.',
+                        style: uText(
+                          size: 11,
+                          color: const Color(0xFFFCA5A5),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  void _openTopUp() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const TopUpScreen()));
   }
 
   Widget _card() {
@@ -347,10 +399,7 @@ class _HeaderState extends State<_Header> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: SvgPicture.string(
-                UArt.card,
-                fit: BoxFit.fill,
-              ),
+              child: SvgPicture.string(UArt.card, fit: BoxFit.fill),
             ),
             Positioned(
               top: 20,
@@ -399,10 +448,7 @@ class _HeaderState extends State<_Header> {
                       TextSpan(
                         children: [
                           TextSpan(
-                            text: WalletStore.instance.balanceText.replaceAll(
-                              RegExp(r'\.\d\d$'),
-                              '',
-                            ),
+                            text: WalletStore.instance.balanceWhole,
                             style: uText(
                               size: 34,
                               weight: FontWeight.w800,
@@ -412,9 +458,7 @@ class _HeaderState extends State<_Header> {
                             ),
                           ),
                           TextSpan(
-                            text: WalletStore.instance.balanceText.substring(
-                              WalletStore.instance.balanceText.length - 3,
-                            ),
+                            text: WalletStore.instance.balanceFraction,
                             style: uText(
                               size: 34,
                               weight: FontWeight.w800,
@@ -608,7 +652,7 @@ class _HeaderState extends State<_Header> {
               ),
               style: uText(size: 28, weight: FontWeight.w700),
               decoration: InputDecoration(
-                prefixText: '\$ ',
+                prefixText: '₹ ',
                 prefixStyle: uText(size: 28, weight: FontWeight.w700),
                 filled: true,
                 fillColor: U.bg,
@@ -734,7 +778,7 @@ class _ActivityRow extends StatelessWidget {
               ),
             ),
             Text(
-              '${tx.amount < 0 ? '-' : '+'}\$${tx.amount.abs().toStringAsFixed(2).replaceAll('.', ',')}',
+              '${tx.amount < 0 ? '-' : '+'}₹${tx.amount.abs().toStringAsFixed(2).replaceAll('.', ',')}',
               style: uText(
                 size: 14,
                 weight: FontWeight.w700,

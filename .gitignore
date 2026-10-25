@@ -54,4 +54,9 @@ app.*.map.json
 
 # Agent backend
 /server/node_modules/
+/Backend/node_modules/
 /server/.env
+
+/.superpowers/
+/Backend/.env
+/android/key.properties

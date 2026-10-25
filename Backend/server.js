@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 
 import { askModel, parseScreen, validateCommand } from './agent.js';
+import { createLedger, sendLedgerError } from './ledger.js';
 import {
   initSmartAccount,
   walletState,
@@ -32,6 +33,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const ledger = createLedger(supabase);
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
@@ -412,6 +414,30 @@ app.get('/api/wallet/status', (_req, res) => {
     ...walletState,
     currentTime: Math.floor(Date.now() / 1000),
   });
+});
+
+// 1b. Live ledger balance (Supabase is the only source)
+app.get('/api/wallet/balance', async (_req, res) => {
+  try {
+    const { balanceInr } = await ledger.getBalance();
+    return res.json({ balanceInr });
+  } catch (err) {
+    console.error('[Ledger Balance]', err.message);
+    return sendLedgerError(res, err);
+  }
+});
+
+// 1c. Top up the wallet. Atomic credit in Supabase; no local fallback.
+app.post('/api/wallet/topup', async (req, res) => {
+  const { amountInr } = req.body ?? {};
+
+  try {
+    const result = await ledger.topUp(amountInr);
+    return res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    console.error('[Ledger TopUp]', err.message);
+    return sendLedgerError(res, err);
+  }
 });
 
 // 2. Agent Autonomous Payment (Session Key Policy Check)

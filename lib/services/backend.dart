@@ -46,6 +46,37 @@ class BridgyBackend {
   static Stream<AuthState> get authChanges =>
       client?.auth.onAuthStateChange ?? const Stream<AuthState>.empty();
 
+  /// Access token for backend calls. Null when no session exists.
+  static String? get accessToken => session?.accessToken;
+
+  /// Email + password sign-in. Throws [AuthException] with Supabase's message.
+  static Future<AuthResponse> signInWithEmail(String email, String password) {
+    final supabase = client;
+    if (supabase == null) throw const BackendNotConfigured();
+    return supabase.auth.signInWithPassword(email: email, password: password);
+  }
+
+  /// Creates an account and sends the confirmation email.
+  static Future<AuthResponse> signUpWithEmail(String email, String password) {
+    final supabase = client;
+    if (supabase == null) throw const BackendNotConfigured();
+    return supabase.auth.signUp(
+      email: email,
+      password: password,
+      emailRedirectTo: authRedirectUrl,
+    );
+  }
+
+  /// Sends a passwordless sign-in link.
+  static Future<void> sendMagicLink(String email) {
+    final supabase = client;
+    if (supabase == null) throw const BackendNotConfigured();
+    return supabase.auth.signInWithOtp(
+      email: email,
+      emailRedirectTo: authRedirectUrl,
+    );
+  }
+
   static Future<void> init() async {
     if (!enabled) return;
     await Supabase.initialize(url: _url, publishableKey: _anonKey);
@@ -70,4 +101,12 @@ class BridgyBackend {
   }
 
   static String get modeLabel => enabled ? 'supabase' : 'local only';
+}
+
+/// Thrown when a cloud call is attempted without Supabase credentials.
+class BackendNotConfigured implements Exception {
+  const BackendNotConfigured();
+
+  @override
+  String toString() => 'Supabase is not configured in this build.';
 }
