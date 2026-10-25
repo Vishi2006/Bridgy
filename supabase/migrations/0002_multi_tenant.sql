@@ -29,28 +29,30 @@ alter table public.transactions
 alter table public.topups
   add column if not exists wallet_id uuid references public.wallets(id) on delete cascade;
 
--- 3. Drop the single-wallet demo rows.
-delete from public.topups;
-delete from public.transactions;
-delete from public.wallets;
-
--- 4. Owner columns.
+-- 3. Owner columns.
 alter table public.wallets
   add column if not exists owner_id uuid references auth.users(id) on delete cascade;
-alter table public.wallets alter column owner_id set not null;
 create unique index if not exists wallets_owner_unique on public.wallets (owner_id);
 
 alter table public.transactions
   add column if not exists owner_id uuid references auth.users(id) on delete cascade;
-alter table public.transactions alter column owner_id set not null;
 create index if not exists transactions_owner_created_idx
   on public.transactions (owner_id, created_at desc);
 
 alter table public.topups
   add column if not exists owner_id uuid references auth.users(id) on delete cascade;
-alter table public.topups alter column owner_id set not null;
 create index if not exists topups_owner_created_idx
   on public.topups (owner_id, created_at desc);
+
+-- 4. Drop only rows from the pre-auth demo build. Real users are preserved,
+-- so this file is safe to re-run after data exists.
+delete from public.topups where owner_id is null;
+delete from public.transactions where owner_id is null;
+delete from public.wallets where owner_id is null;
+
+alter table public.wallets alter column owner_id set not null;
+alter table public.transactions alter column owner_id set not null;
+alter table public.topups alter column owner_id set not null;
 
 -- 5. PSP columns. Razorpay payment links are the default rail.
 alter table public.topups
