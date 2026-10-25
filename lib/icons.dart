@@ -36,6 +36,16 @@ abstract final class Icons8 {
   static const bolt = '<path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>';
   static const backspace =
       '<path fill-rule="evenodd" clip-rule="evenodd" d="M2.5 12a2 2 0 0 1 .586-1.414l5-5A2 2 0 0 1 9.5 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-10a2 2 0 0 1-1.414-.586l-5-5A2 2 0 0 1 2.5 12Zm11.707-2.707a1 1 0 0 0-1.414 1.414L14.086 12l-1.293 1.293a1 1 0 1 0 1.414 1.414L15.5 13.414l1.293 1.293a1 1 0 0 0 1.414-1.414L16.914 12l1.293-1.293a1 1 0 0 0-1.414-1.414L15.5 10.586l-1.293-1.293Z"/>';
+  static const copy =
+      '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>';
+  static const shieldCheck =
+      '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>';
+  static const fingerprint =
+      '<path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"/><path d="M5 19.5C5.5 18 6 15 6 12c0-1.7.4-3.2 1.2-4.6"/><path d="M10 21v-1c0-2.4.2-4.8.6-7.1"/><path d="M14 21c.2-2.6.6-5.2 1.3-7.7"/><path d="M18 21c.4-2.6.8-5.3 1-8"/><path d="M12 12c0 1.5-.5 3-1 4.5"/><path d="M12 6c2.2.5 4 2.5 4 5v1"/>';
+  static const alert =
+      '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>';
+  static const robot =
+      '<rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 2v4M8 11V9a4 4 0 0 1 8 0v2"/><circle cx="9" cy="16" r="1" fill="currentColor"/><circle cx="15" cy="16" r="1" fill="currentColor"/>';
 }
 
 class AppIcon extends StatelessWidget {

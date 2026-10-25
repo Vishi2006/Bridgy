@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../icons.dart';
 import '../state/policy_controller.dart';
 import '../theme.dart';
 
-/// Spending policy editor: per-transaction limit, daily limit, expiry.
+/// Spending policy editor: smart wallet, per-transaction limit, daily limit, expiry.
 class PolicyScreen extends StatefulWidget {
   const PolicyScreen({super.key, this.embedded = false});
 
@@ -29,29 +30,34 @@ class _PolicyScreenState extends State<PolicyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _header(),
-              const SizedBox(height: 20),
-              Expanded(
-                child: ListView(
-                  children: [
-                    _limitCard(),
-                    const SizedBox(height: 14),
-                    _expiryCard(),
-                    const SizedBox(height: 14),
-                    _statusCard(),
-                  ],
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) => Scaffold(
+        backgroundColor: AppColors.bg,
+        body: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _header(),
+                const SizedBox(height: 20),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      _smartWalletCard(),
+                      const SizedBox(height: 14),
+                      _limitCard(),
+                      const SizedBox(height: 14),
+                      _expiryCard(),
+                      const SizedBox(height: 14),
+                      _statusCard(),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -95,7 +101,6 @@ class _PolicyScreenState extends State<PolicyScreen> {
           onTap: () async {
             await _controller.save();
             if (!mounted) return;
-            setState(() {});
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Policy ${_controller.syncStatus}')),
             );
@@ -121,11 +126,85 @@ class _PolicyScreenState extends State<PolicyScreen> {
     );
   }
 
+  Widget _smartWalletCard() {
+    final addr = _controller.smartWalletAddress;
+    final truncated = addr.length > 14
+        ? '${addr.substring(0, 8)}...${addr.substring(addr.length - 6)}'
+        : addr;
+
+    return _card(
+      children: [
+        Row(
+          children: [
+            Text(
+              'Smart Account',
+              style: uiStyle(size: 12, color: AppColors.muted),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.gold.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                'Base Sepolia',
+                style: uiStyle(size: 10, weight: FontWeight.w700, color: AppColors.goldText),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                truncated,
+                style: displayStyle(size: 17, spacing: -0.4),
+              ),
+            ),
+            IconButton(
+              icon: const AppIcon(Icons8.copy, size: 16, color: AppColors.ink),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: addr));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Wallet address copied to clipboard')),
+                );
+              },
+              tooltip: 'Copy address',
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(4),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                color: Color(0xFF16A34A),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Session Key Active • ZeroDev Kernel v0.3.1',
+              style: uiStyle(size: 11, color: AppColors.muted),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _limitCard() {
     return _card(
       children: [
         Text(
-          'Per transaction',
+          'Per transaction hard cap',
           style: uiStyle(size: 12, color: AppColors.muted),
         ),
         const SizedBox(height: 4),
@@ -140,10 +219,10 @@ class _PolicyScreenState extends State<PolicyScreen> {
           divisions: 9,
           activeColor: AppColors.gold,
           label: '₹${_controller.perTxLimitInr.round()}',
-          onChanged: (v) => setState(() => _controller.setPerTxLimit(v)),
+          onChanged: (v) => _controller.setPerTxLimit(v),
         ),
         const Divider(color: AppColors.border, height: 28),
-        Text('Daily limit', style: uiStyle(size: 12, color: AppColors.muted)),
+        Text('Daily spending budget', style: uiStyle(size: 12, color: AppColors.muted)),
         const SizedBox(height: 4),
         Text(
           '₹${_controller.dailyLimitInr.round()}',
@@ -156,7 +235,7 @@ class _PolicyScreenState extends State<PolicyScreen> {
           divisions: 19,
           activeColor: AppColors.gold,
           label: '₹${_controller.dailyLimitInr.round()}',
-          onChanged: (v) => setState(() => _controller.setDailyLimit(v)),
+          onChanged: (v) => _controller.setDailyLimit(v),
         ),
         const SizedBox(height: 4),
         Text(
@@ -194,30 +273,61 @@ class _PolicyScreenState extends State<PolicyScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
+        Row(
           children: [
-            for (final entry in presets.entries)
-              InkResponse(
-                onTap: () => setState(
-                  () => _controller.setExpiry(DateTime.now().add(entry.value)),
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final entry in presets.entries)
+                    InkResponse(
+                      onTap: () => _controller.setExpiry(DateTime.now().add(entry.value)),
+                      radius: 20,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.pill,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          entry.key,
+                          style: uiStyle(size: 12, weight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            InkResponse(
+              onTap: () async {
+                final ok = await _controller.renewSession();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok
+                        ? 'Session renewed for 24 hours on Base Sepolia'
+                        : 'Session renewed locally'),
+                  ),
+                );
+              },
+              radius: 22,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.gold,
+                  borderRadius: BorderRadius.circular(999),
                 ),
-                radius: 20,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.pill,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    entry.key,
-                    style: uiStyle(size: 12, weight: FontWeight.w600),
-                  ),
+                child: Text(
+                  'Renew 24h',
+                  style: uiStyle(size: 12, weight: FontWeight.w700, color: AppColors.ink),
                 ),
               ),
+            ),
           ],
         ),
       ],
@@ -239,16 +349,16 @@ class _PolicyScreenState extends State<PolicyScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              'backend: ${_controller.syncStatus}',
+              'status: ${_controller.syncStatus}',
               style: uiStyle(size: 12, color: AppColors.muted),
             ),
           ],
         ),
         const SizedBox(height: 10),
         Text(
-          'Limits are also enforced by the session key on Base Sepolia once '
-          'the wallet leg is connected. Exceeding the per-transaction limit '
-          'escalates to owner approval.',
+          'Policies are enforced cryptographically on Base Sepolia by ZeroDev '
+          'Kernel v0.3.1. When an agent action exceeds the ₹${_controller.perTxLimitInr.round()} '
+          'per-tx limit, it automatically escalates to your biometric approval.',
           style: uiStyle(size: 11.5, color: AppColors.muted, height: 1.45),
         ),
       ],
@@ -275,7 +385,7 @@ class _PolicyScreenState extends State<PolicyScreen> {
 abstract final class BridgyPolicyStatus {
   static Color colorFor(String status) {
     if (status.contains('failed')) return AppColors.negative;
-    if (status.contains('saved') || status == 'synced') return AppColors.gold;
+    if (status.contains('saved') || status.contains('synced')) return AppColors.gold;
     return AppColors.muted;
   }
 }

@@ -47,6 +47,9 @@ class _AgentChatScreenState extends State<AgentChatScreen>
     final running = await _screen.isServiceRunning();
     if (!mounted) return;
     setState(() => _accessibilityOn = running);
+    if (!_ai.isConfigured) {
+      _system('Add your API key to start, or connect to the Backend.');
+    }
   }
 
   @override

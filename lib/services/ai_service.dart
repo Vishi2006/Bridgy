@@ -12,9 +12,10 @@ class AiResponse {
 }
 
 class AiService {
+  static const String backendDefaultBaseUrl = 'http://10.0.2.2:8787';
   static const String _defaultBaseUrl = String.fromEnvironment(
     'BRIDGY_AGENT_URL',
-    defaultValue: 'http://10.0.2.2:8787',
+    defaultValue: backendDefaultBaseUrl,
   );
   static const String _defaultModel = 'deepseek/deepseek-v4.1-flash-1017';
 
@@ -89,7 +90,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
       'BRIDGY_AGENT_URL',
       defaultValue: _defaultBaseUrl,
     );
-    _apiKey = 'server-proxy';
+    _apiKey = null;
     _baseUrl = envBaseUrl.endsWith('/api') ? envBaseUrl : '$envBaseUrl/api';
     _model = _defaultModel;
     _maxSteps = prefs.getInt('api_max_steps') ?? 15;
@@ -129,7 +130,19 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
     await prefs.setBool('api_use_system_prompt', useSystemPrompt);
   }
 
-  bool get isConfigured => _baseUrl.isNotEmpty;
+  bool get isBackendProxy {
+    final uri = Uri.tryParse(_baseUrl);
+    if (uri == null) return false;
+    final host = uri.host.toLowerCase();
+    return host == 'localhost' ||
+        host == '127.0.0.1' ||
+        host == '10.0.2.2' ||
+        uri.port == 8787 ||
+        uri.port == 3000;
+  }
+
+  bool get isConfigured =>
+      (_apiKey != null && _apiKey!.isNotEmpty) || isBackendProxy;
   String get baseUrl => _baseUrl;
   String get model => _model;
   String get apiKey => _apiKey ?? '';
@@ -154,7 +167,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
 
   /// Send a message to the AI and get a response.
   Future<String> sendMessage(String message, {bool isAgentMode = true}) async {
-    if (_apiKey == null || _apiKey!.isEmpty) {
+    if (!isConfigured) {
       throw Exception('API Key is not configured. Please go to Settings.');
     }
 
@@ -204,7 +217,8 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
             Uri.parse(requestUrl),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $_apiKey',
+              if (_apiKey != null && _apiKey!.isNotEmpty)
+                'Authorization': 'Bearer $_apiKey',
               'HTTP-Referer': 'https://github.com/orailnoor/private-agent',
               'X-Title': 'Bridgy',
             },
@@ -273,7 +287,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
     String message, {
     bool isAgentMode = true,
   }) async* {
-    if (_apiKey == null || _apiKey!.isEmpty) {
+    if (!isConfigured) {
       throw Exception('API Key is not configured. Please go to Settings.');
     }
 
@@ -304,7 +318,8 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
       final request = http.Request('POST', Uri.parse(requestUrl));
       request.headers.addAll({
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_apiKey',
+        if (_apiKey != null && _apiKey!.isNotEmpty)
+          'Authorization': 'Bearer $_apiKey',
         'HTTP-Referer': 'https://github.com/orailnoor/private-agent',
         'X-Title': 'Bridgy',
       });
@@ -415,7 +430,7 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
   /// Send a task execution message — no conversation history, low temperature, limited tokens.
   /// This is much faster and cheaper than sendMessage.
   Future<AiResponse> sendTaskMessage(String systemPrompt, String prompt) async {
-    if (_apiKey == null || _apiKey!.isEmpty) {
+    if (!isConfigured) {
       throw Exception('API Key is not configured. Please go to Settings.');
     }
 
@@ -444,7 +459,8 @@ Answer questions, explain concepts, brainstorm, write emails/messages, and chat 
               Uri.parse(requestUrl),
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_apiKey',
+                if (_apiKey != null && _apiKey!.isNotEmpty)
+                  'Authorization': 'Bearer $_apiKey',
                 'HTTP-Referer': 'https://github.com/orailnoor/private-agent',
                 'X-Title': 'Bridgy',
               },

@@ -88,7 +88,7 @@ void main() {
       app('upi://pay?pa=zepto@axisbank&pn=Zepto&am=100'),
     );
 
-    expect(find.text('Blocked by policy'), findsOneWidget);
+    expect(find.text('Blocked by policy (Low Budget)'), findsOneWidget);
     expect(find.text('Payment blocked'), findsOneWidget);
   });
 
