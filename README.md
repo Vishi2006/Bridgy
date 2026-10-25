@@ -303,7 +303,17 @@ The server listens on `0.0.0.0:8787`. Restart it after changing `.env`. Check it
 
 Run the backend tests with `cd Backend && npm test`.
 
-Apply the database migrations once, in order, from `supabase/migrations` (Supabase SQL editor or `supabase db push`).
+Apply the database migrations once, in order, from `supabase/migrations` (Supabase SQL editor or `supabase db push`). The order is `0000_wallet_tables`, `0001_profiles`, `0002_multi_tenant`, `0003_debit`, `0004_debit_caps`.
+
+### Deploy the backend
+
+The app's wallet base URL is `https://bridgy-backend.vercel.app`. Deploy `Backend/` (Vercel, root `vercel.json`, or any Node host) with the env vars above, then check:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' https://bridgy-backend.vercel.app/api/wallet/balance
+```
+
+Until the new routes are deployed, the release app shows `Cannot GET /api/wallet/balance` verbatim. There is no localhost fallback in the release build. A user must sign up before `auth.users` has rows; an empty `auth.users` table in the SQL editor means no account has been created yet.
 
 ### 2. Run the app
 
