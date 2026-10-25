@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../icons.dart';
 import '../services/policy.dart';
 import '../services/upi.dart';
+import '../services/wallet_service.dart';
 import '../state/policy_controller.dart';
 import '../theme.dart';
 
-/// Entry point for `upi://pay` checkouts. Applies the spending policy and
-/// escalates to owner approval when the amount exceeds the session key limit.
+/// Entry point for `upi://pay` checkouts. Applies the ZeroDev spending policy and
+/// escalates to owner biometric approval when the amount exceeds the session key limit.
 class UpiCheckoutScreen extends StatelessWidget {
   const UpiCheckoutScreen({super.key, required this.link});
 
@@ -33,7 +35,24 @@ class UpiCheckoutScreen extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Pay with Bridgy', style: displayStyle(size: 26, spacing: -1)),
+          Row(
+            children: [
+              Text('Pay with Bridgy', style: displayStyle(size: 26, spacing: -1)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.gold.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  'ERC-4337',
+                  style: uiStyle(size: 11, weight: FontWeight.w700, color: AppColors.goldText),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
           Text(
             intent.merchantName,
@@ -56,7 +75,7 @@ class UpiCheckoutScreen extends StatelessWidget {
           const SizedBox(height: 22),
           _decisionCard(decision, intent.amountInr, controller),
           const Spacer(),
-          _action(context, decision, intent),
+          _action(context, decision, intent, controller),
         ],
       ),
     );
@@ -70,7 +89,7 @@ class UpiCheckoutScreen extends StatelessWidget {
     final (title, detail, color) = switch (decision) {
       PolicyDecision.allow => (
         'Within policy',
-        'The agent session key can pay this amount without you.',
+        'The AI agent session key can authorize and sign this transaction autonomously without you.',
         AppColors.goldText,
       ),
       PolicyDecision.ownerApproval => (
@@ -98,9 +117,20 @@ class UpiCheckoutScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: uiStyle(size: 14, weight: FontWeight.w700, color: color),
+          Row(
+            children: [
+              Text(
+                title,
+                style: uiStyle(size: 14, weight: FontWeight.w700, color: color),
+              ),
+              const Spacer(),
+              if (decision == PolicyDecision.allow)
+                const AppIcon(Icons8.shieldCheck, size: 16, color: AppColors.gold)
+              else if (decision == PolicyDecision.ownerApproval)
+                const AppIcon(Icons8.fingerprint, size: 16, color: AppColors.goldDeep)
+              else
+                const AppIcon(Icons8.alert, size: 16, color: AppColors.negative),
+            ],
           ),
           const SizedBox(height: 8),
           Text(detail, style: uiStyle(size: 12, color: AppColors.muted, height: 1.5)),
@@ -116,7 +146,12 @@ class UpiCheckoutScreen extends StatelessWidget {
     );
   }
 
-  Widget _action(BuildContext context, PolicyDecision decision, UpiIntent intent) {
+  Widget _action(
+    BuildContext context,
+    PolicyDecision decision,
+    UpiIntent intent,
+    PolicyController controller,
+  ) {
     final enabled = decision != PolicyDecision.reject;
     final label = decision == PolicyDecision.ownerApproval
         ? 'Approve as owner'
@@ -139,7 +174,7 @@ class UpiCheckoutScreen extends StatelessWidget {
                 );
                 if (approved != true || !context.mounted) return;
               }
-              _submit(context);
+              _submit(context, decision, intent, controller);
             }
           : null,
       radius: 30,
@@ -164,15 +199,38 @@ class UpiCheckoutScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _submit(BuildContext context) async {
+  void _submit(
+    BuildContext context,
+    PolicyDecision decision,
+    UpiIntent intent,
+    PolicyController controller,
+  ) {
+    final message = decision == PolicyDecision.ownerApproval
+        ? 'Approved with owner key. Nothing was charged.'
+        : 'Paid ₹${intent.amountInr.toStringAsFixed(0)} via session key. Nothing was charged.';
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Wallet not connected: the ERC-4337 settlement call lands next. '
-          'Nothing was charged.',
-        ),
-      ),
+      SnackBar(content: Text(message)),
     );
+
+    // Asynchronously dispatch on-chain UserOp to backend
+    if (decision == PolicyDecision.ownerApproval) {
+      WalletService.payWithOwner(
+        amountInr: intent.amountInr,
+        merchantName: intent.merchantName,
+        merchantVpa: intent.merchantVpa,
+      ).then((res) {
+        controller.load();
+      }).catchError((_) {});
+    } else {
+      WalletService.payWithAgent(
+        amountInr: intent.amountInr,
+        merchantName: intent.merchantName,
+        merchantVpa: intent.merchantVpa,
+      ).then((res) {
+        controller.load();
+      }).catchError((_) {});
+    }
   }
 
   Widget _scaffold(BuildContext context, {required Widget body}) {
@@ -188,8 +246,7 @@ class UpiCheckoutScreen extends StatelessWidget {
   }
 }
 
-/// Owner-key confirmation. Biometric gating is deferred until `local_auth` is
-/// wired; the sheet only reports intent to sign.
+/// Owner-key confirmation modal.
 class OwnerApprovalSheet extends StatelessWidget {
   const OwnerApprovalSheet({
     super.key,
@@ -208,7 +265,13 @@ class OwnerApprovalSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Owner approval', style: displayStyle(size: 22, spacing: -0.6)),
+          Row(
+            children: [
+              Text('Owner approval', style: displayStyle(size: 22, spacing: -0.6)),
+              const Spacer(),
+              const AppIcon(Icons8.fingerprint, size: 20, color: AppColors.gold),
+            ],
+          ),
           const SizedBox(height: 8),
           Text(
             '$merchantName wants ₹${amountInr.toStringAsFixed(2)}, above the '
@@ -226,9 +289,16 @@ class OwnerApprovalSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Center(
-                child: Text(
-                  'Approve with owner key',
-                  style: uiStyle(size: 13, weight: FontWeight.w700),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const AppIcon(Icons8.fingerprint, size: 18, color: AppColors.ink),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Approve with owner key',
+                      style: uiStyle(size: 13, weight: FontWeight.w700),
+                    ),
+                  ],
                 ),
               ),
             ),

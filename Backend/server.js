@@ -6,6 +6,14 @@ import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 
 import { askModel, parseScreen, validateCommand } from './agent.js';
+import {
+  initSmartAccount,
+  walletState,
+  executeAgentPayment,
+  executeOwnerPayment,
+  renewSessionKey,
+  updatePolicyLimits,
+} from './wallet.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -174,10 +182,13 @@ app.get('/', (_req, res) => {
         <span class="check-icon">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </span>
-        <span>Secure Auth Deep-Link Handler</span>
+        <span>ZeroDev Kernel Account on Base Sepolia</span>
       </div>
     </div>
-    <a href="${appRedirectUrl}" class="btn">Open Bridgy App</a>
+    <div style="display: flex; gap: 10px; flex-direction: column;">
+      <a href="/dashboard" class="btn" style="background: #C9A961; color: #171513;">Open Judge Dashboard</a>
+      <a href="${appRedirectUrl}" class="btn" style="background: #141312; color: #FFFFFF;">Open Bridgy App</a>
+    </div>
   </div>
 </body>
 </html>`);
@@ -391,6 +402,421 @@ app.post('/api/terminal-logs', async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+// ── Smart Wallet & Policy Engine Endpoints ──────────────────────────────────
+
+// 1. Get Wallet & Policy Status
+app.get('/api/wallet/status', (_req, res) => {
+  res.json({
+    status: 'ok',
+    ...walletState,
+    currentTime: Math.floor(Date.now() / 1000),
+  });
+});
+
+// 2. Agent Autonomous Payment (Session Key Policy Check)
+app.post('/api/wallet/pay-agent', async (req, res) => {
+  const { amountInr, merchantName, merchantVpa, targetAddress } = req.body ?? {};
+
+  if (!amountInr || isNaN(Number(amountInr))) {
+    return res.status(400).json({ error: 'Valid amountInr is required' });
+  }
+
+  try {
+    const tx = await executeAgentPayment({
+      amountInr: Number(amountInr),
+      merchantName: merchantName || 'Quick Commerce Merchant',
+      merchantVpa: merchantVpa || 'merchant@upi',
+      targetAddress,
+    });
+
+    // Also record in Supabase if configured
+    try {
+      await supabase.from('wallets').upsert({
+        smart_wallet_address: walletState.smartAccountAddress,
+        agent_session_key: walletState.agentSessionAddress,
+        spent_today_inr: walletState.policy.spentTodayInr,
+      });
+    } catch (_) {}
+
+    return res.json({
+      success: true,
+      message: 'Transaction authorized autonomously by AI Agent Session Key.',
+      transaction: tx,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({
+      error: err.message,
+      code: err.code || 'AGENT_PAY_FAILED',
+      requires_owner_approval: Boolean(err.requires_owner_approval),
+    });
+  }
+});
+
+// 3. Owner-Approved Payment (Bypasses Session Key Limit)
+app.post('/api/wallet/pay-owner', async (req, res) => {
+  const { amountInr, merchantName, merchantVpa, targetAddress, biometricApproved } = req.body ?? {};
+
+  if (!amountInr || isNaN(Number(amountInr))) {
+    return res.status(400).json({ error: 'Valid amountInr is required' });
+  }
+
+  try {
+    const tx = await executeOwnerPayment({
+      amountInr: Number(amountInr),
+      merchantName: merchantName || 'Quick Commerce Merchant',
+      merchantVpa: merchantVpa || 'merchant@upi',
+      targetAddress,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Transaction authorized and signed with Owner Master Key.',
+      biometricApproved: Boolean(biometricApproved),
+      transaction: tx,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. Renew Session Key (+24h)
+app.post('/api/wallet/renew-session', (_req, res) => {
+  const result = renewSessionKey(86400);
+  return res.json(result);
+});
+
+// 5. Update Policy Configuration
+app.post('/api/wallet/policy', (req, res) => {
+  const { perTxLimitInr, dailyLimitInr } = req.body ?? {};
+  const updated = updatePolicyLimits({ perTxLimitInr, dailyLimitInr });
+  return res.json({ success: true, policy: updated });
+});
+
+// 6. Judge & Live Demo Dashboard
+app.get('/dashboard', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  const p = walletState.policy;
+  const hoursLeft = Math.max(0, Math.round((p.validUntilTimestamp - Date.now() / 1000) / 3600));
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bridgy — Agent Wallet Policy Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #F6F3EC;
+      color: #171513;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      padding: 32px 16px;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .title {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 999px;
+    }
+    .badge-live { background: #DCFCE7; color: #16A34A; border: 1px solid #86EFAC; }
+    .badge-mock { background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: #FFFFFF;
+      border-radius: 20px;
+      padding: 22px;
+      border: 1px solid #E7E1D4;
+      box-shadow: 0 4px 20px rgba(31, 25, 15, 0.04);
+    }
+    .card-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8A8578;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .card-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #171513;
+      word-break: break-all;
+    }
+    .card-sub {
+      font-size: 12px;
+      color: #8A8578;
+      margin-top: 6px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .policies-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .policy-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: #F9F7F2;
+      border-radius: 14px;
+      border: 1px solid #EFEAE0;
+    }
+    .policy-name { font-weight: 600; font-size: 14px; }
+    .policy-val { font-weight: 700; color: #C9A961; font-size: 14px; }
+    .btn {
+      cursor: pointer;
+      display: inline-block;
+      padding: 10px 18px;
+      background: #141312;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn-gold { background: #C9A961; color: #171513; }
+    .btn-outline { background: transparent; color: #171513; border: 1px solid #D6CEBE; }
+    .table-container {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    th {
+      padding: 10px 14px;
+      color: #8A8578;
+      font-weight: 600;
+      border-bottom: 1px solid #EFEAE0;
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #F3EFE6;
+      color: #171513;
+    }
+    .tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .tag-agent { background: #DCFCE7; color: #15803D; }
+    .tag-owner { background: #FEF3C7; color: #B45309; }
+    .hash { font-family: monospace; font-size: 11px; color: #8A8578; }
+    .actions-bar {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">
+        Bridgy Policy Guardian
+        <span class="badge ${walletState.isLive ? 'badge-live' : 'badge-mock'}">
+          <span class="dot"></span>
+          ${walletState.isLive ? 'Live on Base Sepolia' : 'ZeroDev Active (Sepolia Mock Ready)'}
+        </span>
+      </div>
+      <div>
+        <a href="/" class="btn btn-outline">Home</a>
+        <a href="${appRedirectUrl}" class="btn">Launch Mobile App</a>
+      </div>
+    </div>
+
+    <!-- Key Architecture Grid -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-label">ERC-4337 Smart Account</div>
+        <div class="card-value" style="font-size: 15px; font-family: monospace;">${walletState.smartAccountAddress || 'Initializing...'}</div>
+        <div class="card-sub">ZeroDev Kernel v0.3.1 • EntryPoint v0.7</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Session Key (AI Agent)</div>
+        <div class="card-value" style="font-size: 15px; font-family: monospace;">${walletState.agentSessionAddress || 'Generating...'}</div>
+        <div class="card-sub">Governed strictly by on-chain policies</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Master Key (Owner)</div>
+        <div class="card-value" style="font-size: 15px; font-family: monospace;">${walletState.ownerAddress || 'Configured'}</div>
+        <div class="card-sub">Full authority • Biometric verification override</div>
+      </div>
+    </div>
+
+    <!-- Policy Guardrails -->
+    <div class="card" style="margin-bottom: 24px;">
+      <div class="section-title">
+        🛡️ Active Session Key Policies (Smart Contract Guardrails)
+      </div>
+      <div class="policies-list">
+        <div class="policy-row">
+          <div>
+            <div class="policy-name">Per-Transaction Hard Cap</div>
+            <div class="card-sub">Transactions above this require human biometric approval</div>
+          </div>
+          <div class="policy-val">₹${p.perTxLimitInr} (${p.perTxLimitEth} ETH)</div>
+        </div>
+        <div class="policy-row">
+          <div>
+            <div class="policy-name">Daily Budget Ceiling</div>
+            <div class="card-sub">Spent today: ₹${p.spentTodayInr} / ₹${p.dailyLimitInr}</div>
+          </div>
+          <div class="policy-val">₹${p.dailyLimitInr} Limit</div>
+        </div>
+        <div class="policy-row">
+          <div>
+            <div class="policy-name">Session Key Expiration</div>
+            <div class="card-sub">Automatically expires in ~${hoursLeft} hours</div>
+          </div>
+          <div class="policy-val">Valid for ${hoursLeft}h</div>
+        </div>
+        <div class="policy-row">
+          <div>
+            <div class="policy-name">Allowed Target Recipient</div>
+            <div class="card-sub">Quick-Commerce Settlement Vault Whitelist</div>
+          </div>
+          <div class="policy-val" style="font-family: monospace; font-size: 12px;">${p.allowedTarget}</div>
+        </div>
+      </div>
+
+      <!-- Quick Test Buttons for Judges -->
+      <div class="actions-bar">
+        <button class="btn btn-gold" onclick="testPay(140)">⚡ Test ₹140 (Autonomous Pay)</button>
+        <button class="btn btn-outline" onclick="testPay(350)">🔒 Test ₹350 (Trigger Policy Block)</button>
+        <button class="btn btn-outline" onclick="renewSession()">⏳ Renew Session (+24h)</button>
+      </div>
+      <div id="test-result" style="margin-top: 12px; font-size: 13px; font-weight: 600;"></div>
+    </div>
+
+    <!-- Live Transaction History -->
+    <div class="card">
+      <div class="section-title">
+        📜 Base Sepolia UserOp & Transaction Ledger
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Merchant</th>
+              <th>Amount</th>
+              <th>Auth Type</th>
+              <th>Status</th>
+              <th>Tx Hash</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${walletState.transactions.length === 0
+              ? `<tr><td colspan="6" style="text-align: center; color: #8A8578; padding: 28px; font-size: 13px;">No transactions recorded yet. Live checkouts from your mobile app or the test buttons above will appear here in real-time.</td></tr>`
+              : walletState.transactions
+                  .map(
+                    (t) => `
+              <tr>
+                <td>${new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                <td><strong>${t.merchantName || t.title}</strong></td>
+                <td>₹${t.amountInr}</td>
+                <td><span class="tag ${t.type === 'AGENT_PAID' ? 'tag-agent' : 'tag-owner'}">${t.type}</span></td>
+                <td>${t.status}</td>
+                <td class="hash">${t.txHash ? t.txHash.slice(0, 10) + '...' + t.txHash.slice(-8) : 'Pending'}</td>
+              </tr>
+            `
+                  )
+                  .join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function testPay(amount) {
+      const resEl = document.getElementById('test-result');
+      resEl.textContent = 'Submitting test UserOp for ₹' + amount + '...';
+      resEl.style.color = '#8A8578';
+
+      try {
+        const res = await fetch('/api/wallet/pay-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amountInr: amount, merchantName: 'Judge Demo Merchant', merchantVpa: 'demo@icici' })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          resEl.textContent = '✅ SUCCESS: Autonomous payment of ₹' + amount + ' approved by session key policy!';
+          resEl.style.color = '#15803D';
+          setTimeout(() => window.location.reload(), 1400);
+        } else {
+          resEl.textContent = '🛡️ BLOCKED AS DESIGNED: ' + data.error;
+          resEl.style.color = '#B45309';
+        }
+      } catch (err) {
+        resEl.textContent = 'Error: ' + err.message;
+        resEl.style.color = '#DC2626';
+      }
+    }
+
+    async function renewSession() {
+      const res = await fetch('/api/wallet/renew-session', { method: 'POST' });
+      if (res.ok) {
+        alert('Session key renewed for +24 hours!');
+        window.location.reload();
+      }
+    }
+  </script>
+</body>
+</html>`);
+});
+
+// Initialize Smart Wallet on startup
+initSmartAccount().catch((e) => console.warn('[Bridgy Wallet Init]', e.message));
 
 if (!process.env.VERCEL) {
   app.listen(port, '0.0.0.0', () => {

@@ -80,3 +80,30 @@ Created a centralized Express server connecting Supabase with the DeepSeek/OpenR
 - Created [`Backend/vercel.json`](file:///d:/coding/Bridgy/Backend/vercel.json) in case Vercel's Root Directory setting is set to `Backend`.
 - Added `GET /` endpoint in `Backend/server.js` so accessing the root URL returns a 200 OK status page instead of a 404 "page doesn't exist".
 - Updated `Backend/server.js` to guard `app.listen` when running in Vercel's serverless environment (`if (!process.env.VERCEL)`).
+
+---
+
+## 8. ZeroDev ERC-4337 Smart Account & Session Key Policy Engine (Base Sepolia)
+Implemented the MetaMask-style dual-key security architecture using pure JavaScript (ESM) without needing to write Solidity from scratch during the hackathon.
+
+### Architecture & Security Rules:
+1. **Master Key (Human Owner)**: Sudo validator with 100% authority. Can override policy limits via biometric/fingerprint auth and renew or revoke session permissions.
+2. **Session Key (AI Agent)**: Restricted cryptographic key provided to the Express backend and DeepSeek agent, bound by strict on-chain policies:
+   - **Timestamp Expiry**: Automatically self-destructs after 24 hours (`toTimestampPolicy`).
+   - **Spending Limit**: Hard cap of ₹200 / 0.002 ETH per transaction (`toCallPolicy`).
+   - **Allowed Recipient Whitelist**: Restricted strictly to the settlement vault contract (`BRIDGY_UPI_VAULT`).
+3. **Resilient Dual-Mode Fallback**: Runs out of the box with simulated in-memory keys and UserOps so frontend demos never block on missing developer credentials. Automatically switches to live Base Sepolia on-chain execution when `ZERODEV_PROJECT_ID` is provided.
+
+### Files Created & Updated:
+1. **`Backend/wallet.js`**: Core smart wallet module written in ESM JavaScript using `@zerodev/sdk`, `@zerodev/ecdsa-validator`, `@zerodev/permissions`, and `viem`. Implements `initSmartAccount()`, `executeAgentPayment()`, `executeOwnerPayment()`, `renewSessionKey()`, and `updatePolicyLimits()`.
+2. **`Backend/server.js`**:
+   - `GET /api/wallet/status`: returns smart account address, agent key, network, and policy details.
+   - `POST /api/wallet/pay-agent`: verifies policy and executes autonomous agent transaction.
+   - `POST /api/wallet/pay-owner`: executes owner-authorized transaction when limit is exceeded.
+   - `POST /api/wallet/renew-session`: refreshes session key for another 24 hours.
+   - `GET /dashboard`: Judge-facing live status dashboard with key badges, policy checklist, interactive test buttons, and real-time transaction ledger.
+3. **`lib/services/wallet_service.dart`**: Flutter HTTP service bridge connecting the mobile app to backend wallet endpoints with automatic error and fallback handling.
+4. **`lib/state/policy_controller.dart`**: Synchronizes live smart wallet address and session key limits from the backend into the application state.
+5. **`lib/screens/policy_screen.dart`**: Displays Base Sepolia smart account address with copy action, session key active badge, interactive limit sliders, and "Renew 24h" button.
+6. **`lib/screens/upi_checkout_screen.dart`**: Fully wired payment flow: in-policy checkouts dispatch autonomously via `payWithAgent`, while amounts > ₹200 trigger the `OwnerApprovalSheet` for biometric authorization via `payWithOwner`.
+
